@@ -1,0 +1,149 @@
+[
+  {
+    "title": "Metric reconciliation",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Product is on the floor, cabinet appeal, jar spacing, para cabinet, cleanliness, cleaning supplies, office supplies",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Camera check",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Dispensary supplies: Drams, Exit bags, stickers, ink, paper, overall cleanliness, bathrooms, floors, walls, glass, cob webs, AC unit",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "HR Schedule",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Product intake and Manifest accepting in 5 days..",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Inventory assessment: check each product category and depth of offering",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Vendor Order Placement",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Change Bank",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Log in sheets are being used",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Trash Removal",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "MTO flower: If we have more than 1000 grams of 1 strain...make ounce deals of it....",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Cleaning list for TB-status",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Para order pay for with Debit card",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Tent Cards for All Flower: Danae",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Supplies arrival",
+    "room": "MISC",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Exterior Building Check: Plants, Roof, Yard, Ice",
+    "room": "MISC",
+    "category": "JO Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Check on product quantities",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Monday 7th JO pick up, 8th deposit",
+    "room": "MISC",
+    "category": "JO Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "TD: Revolving Task List: for downtime.",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "OLCC email",
+    "room": "Retail JO",
+    "category": "JO Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  }
+]

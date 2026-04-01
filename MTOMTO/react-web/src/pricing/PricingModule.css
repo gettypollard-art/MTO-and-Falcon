@@ -1,0 +1,417 @@
+/* MTO Pricing Module — dark theme
+   Uses CSS custom properties from App.css */
+
+/* ── Module wrapper ─────────────────────────── */
+
+.pricing-module {
+  width: min(1760px, calc(100vw - 2rem));
+  margin: 0 auto;
+}
+
+/* ── Two-column layout: sidebar + content ─── */
+
+.pricing-layout {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+/* ── Sidebar ────────────────────────────────── */
+
+.pricing-sidebar {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  position: sticky;
+  top: 0.75rem;
+}
+
+.pricing-sidebar-header {
+  padding: 0.85rem 1rem;
+  background: var(--card-alt);
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pricing-sidebar-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.pricing-store-select {
+  width: 100%;
+  font-size: 0.82rem;
+  padding: 0.38rem 0.5rem;
+}
+
+.pricing-store-loading,
+.pricing-store-error {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.pricing-store-error {
+  color: var(--warning);
+}
+
+/* ── Sidebar nav ────────────────────────────── */
+
+.pricing-sidebar-nav {
+  padding: 0.5rem 0;
+}
+
+.pricing-nav-group {
+  margin-bottom: 0.25rem;
+}
+
+.pricing-nav-group-heading {
+  padding: 0.45rem 1rem 0.2rem;
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.pricing-nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-left: 3px solid transparent;
+}
+
+.pricing-nav-item:hover {
+  background: var(--card-alt);
+}
+
+.pricing-nav-active {
+  background: var(--accent-soft) !important;
+  border-left-color: var(--accent) !important;
+}
+
+.pricing-nav-label {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.pricing-nav-active .pricing-nav-label {
+  color: var(--accent);
+}
+
+.pricing-nav-sub {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.1rem;
+  line-height: 1.2;
+}
+
+/* ── Content area ───────────────────────────── */
+
+.pricing-content {
+  min-width: 0;
+}
+
+/* ── Content cards ──────────────────────────── */
+
+.pricing-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.1rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.pricing-card h3 {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.pricing-card p.pricing-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.pricing-card p.pricing-error {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* ── Loading ────────────────────────────────── */
+
+.pricing-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  color: var(--muted);
+}
+
+.pricing-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: pricing-spin 0.7s linear infinite;
+}
+
+@keyframes pricing-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Tables ─────────────────────────────────── */
+
+.pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.pricing-table th,
+.pricing-table td {
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.pricing-table th {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--card-alt);
+  position: sticky;
+  top: 0;
+}
+
+.pricing-table tr:last-child td {
+  border-bottom: none;
+}
+
+.pricing-table tr:hover td {
+  background: var(--card-alt);
+}
+
+.pricing-table .cell-right {
+  text-align: right;
+}
+
+.pricing-table .cell-positive {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.pricing-table .cell-negative {
+  color: #f87171;
+  font-weight: 600;
+}
+
+/* ── Forms ──────────────────────────────────── */
+
+.pricing-form {
+  display: grid;
+  gap: 0.7rem;
+  max-width: 600px;
+}
+
+.pricing-form label {
+  display: grid;
+  gap: 0.22rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.pricing-form-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.pricing-form-row > label {
+  flex: 1 1 140px;
+}
+
+/* ── Builder preview ────────────────────────── */
+
+.pricing-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.8rem;
+}
+
+.pricing-preview-tile {
+  background: var(--card-alt);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.85rem;
+  text-align: center;
+}
+
+.pricing-preview-tile .preview-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.pricing-preview-tile .preview-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 0.25rem;
+}
+
+.pricing-preview-tile .preview-value.accent {
+  color: var(--accent);
+}
+
+/* ── Badges ─────────────────────────────────── */
+
+.pricing-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pricing-badge-low      { background: rgba(74, 222, 128, 0.14); color: #4ade80; }
+.pricing-badge-medium   { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+.pricing-badge-high     { background: rgba(251, 146, 60, 0.14); color: #fb923c; }
+.pricing-badge-critical { background: rgba(248, 113, 113, 0.14); color: #f87171; }
+.pricing-badge-tier     { background: var(--accent-soft); color: var(--accent); }
+
+/* ── Stats row ──────────────────────────────── */
+
+.pricing-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-bottom: 1rem;
+}
+
+.pricing-stat-card {
+  flex: 1 1 140px;
+  background: var(--card-alt);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.85rem;
+  text-align: center;
+}
+
+.pricing-stat-card .stat-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pricing-stat-card .stat-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 0.2rem;
+}
+
+/* ── Upload area ────────────────────────────── */
+
+.pricing-upload-zone {
+  border: 2px dashed var(--line-strong);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.pricing-upload-zone:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pricing-upload-zone input[type='file'] {
+  display: none;
+}
+
+/* ── Action bar ─────────────────────────────── */
+
+.pricing-action-bar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.8rem;
+}
+
+.pricing-btn-primary {
+  background: var(--accent);
+  color: #071a10;
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+.pricing-btn-primary:hover:not(:disabled) {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #071a10;
+}
+
+.pricing-btn-disabled,
+.pricing-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  font-size: 0.78rem;
+  padding: 0.3rem 0.7rem;
+}
+
+/* ── Responsive ─────────────────────────────── */
+
+@media (max-width: 768px) {
+  .pricing-tabs {
+    gap: 0.22rem;
+  }
+
+  .pricing-tabs button {
+    font-size: 0.74rem;
+    padding: 0.3rem 0.5rem;
+  }
+
+  .pricing-table {
+    font-size: 0.78rem;
+  }
+
+  .pricing-table th,
+  .pricing-table td {
+    padding: 0.35rem 0.4rem;
+  }
+}

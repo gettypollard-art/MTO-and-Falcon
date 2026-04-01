@@ -1,0 +1,1627 @@
+/* ─────────────────────────────────────────────
+   MTO — Global Styles  (dark theme)
+───────────────────────────────────────────── */
+
+:root {
+  --bg:            #0d1117;
+  --surface:       #161c26;
+  --card:          #1c2430;
+  --card-alt:      #212d3c;
+  --line:          #2c3a4a;
+  --line-strong:   #3d5063;
+  --accent:        #3db885;
+  --accent-dim:    #2e9a70;
+  --accent-soft:   rgba(61, 184, 133, 0.14);
+  --accent-border: rgba(61, 184, 133, 0.32);
+  --muted:         #7b9db5;
+  --warning:       #e8944a;
+  --text:          #dce8f0;
+  --text-dim:      #8baab8;
+  --shadow:        0 2px 10px rgba(0, 0, 0, 0.4);
+  --shadow-sm:     0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ─── App shell ─────────────────────────────── */
+
+.app {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ─── Single unified top bar ─────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+}
+
+/* Producer topbar: allow two rows for the many tabs */
+.topbar.topbar-producer {
+  align-items: flex-start;
+}
+
+/* Navigation section — grows to fill available space */
+.topbar-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Producer nav: column of rows */
+.topbar-nav.topbar-nav-producer {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+/* Right-side actions */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* ─── Base form elements ─────────────────────── */
+
+button,
+select,
+input,
+textarea {
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.75rem;
+  background: var(--card-alt);
+  color: var(--text);
+}
+
+button {
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+button:hover {
+  background: #2a3a4d;
+  border-color: var(--line-strong);
+}
+
+select option {
+  background: var(--card);
+  color: var(--text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* ─── Topbar nav tab buttons ─────────────────── */
+
+.producer-tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.producer-tab-row-label {
+  margin: 0.1rem 0;
+}
+
+.producer-following-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.18rem 0.65rem;
+}
+
+.tabs-week-nav {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* Active tab button anywhere in topbar */
+.topbar-nav button.active,
+.topbar button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+  font-weight: 700;
+}
+
+/* ─── Producer specialty tabs (dark tinted) ── */
+
+.tabs .supplies-tab {
+  background: rgba(46, 130, 80, 0.18);
+  border-color: rgba(46, 130, 80, 0.38);
+  color: #6dd5a0;
+  font-weight: 600;
+}
+.tabs .supplies-tab:hover { background: rgba(46, 130, 80, 0.26); }
+.tabs .supplies-tab.active {
+  background: rgba(46, 130, 80, 0.32);
+  border-color: rgba(46, 130, 80, 0.55);
+  color: #8eeab8;
+}
+
+.tabs .flower-layout-tab {
+  background: rgba(56, 120, 200, 0.18);
+  border-color: rgba(56, 120, 200, 0.35);
+  color: #7abaee;
+  font-weight: 600;
+}
+.tabs .flower-layout-tab:hover { background: rgba(56, 120, 200, 0.26); }
+.tabs .flower-layout-tab.active {
+  background: rgba(56, 120, 200, 0.3);
+  border-color: rgba(56, 120, 200, 0.5);
+  color: #9acff5;
+}
+
+.tabs .task-list-tab {
+  background: rgba(70, 100, 200, 0.22);
+  border-color: rgba(70, 100, 200, 0.42);
+  color: #8aabee;
+  font-weight: 600;
+}
+.tabs .task-list-tab:hover { background: rgba(70, 100, 200, 0.3); }
+.tabs .task-list-tab.active {
+  background: rgba(70, 100, 200, 0.35);
+  border-color: rgba(70, 100, 200, 0.55);
+  color: #a8c0f5;
+}
+
+.tabs .mothers-tab {
+  background: rgba(50, 140, 210, 0.18);
+  border-color: rgba(50, 140, 210, 0.36);
+  color: #72c0ec;
+  font-weight: 600;
+}
+.tabs .mothers-tab:hover { background: rgba(50, 140, 210, 0.26); }
+.tabs .mothers-tab.active {
+  background: rgba(50, 140, 210, 0.3);
+  border-color: rgba(50, 140, 210, 0.5);
+  color: #90d4f8;
+}
+
+.tabs .two-gals-tab {
+  background: rgba(30, 160, 160, 0.18);
+  border-color: rgba(30, 160, 160, 0.36);
+  color: #60d0d0;
+  font-weight: 600;
+}
+.tabs .two-gals-tab:hover { background: rgba(30, 160, 160, 0.26); }
+.tabs .two-gals-tab.active {
+  background: rgba(30, 160, 160, 0.3);
+  border-color: rgba(30, 160, 160, 0.5);
+  color: #80e2e2;
+}
+
+.tabs .flower-row-chart-tab {
+  background: rgba(130, 80, 200, 0.18);
+  border-color: rgba(130, 80, 200, 0.36);
+  color: #b88ce8;
+  font-weight: 600;
+}
+.tabs .flower-row-chart-tab:hover { background: rgba(130, 80, 200, 0.26); }
+.tabs .flower-row-chart-tab.active {
+  background: rgba(130, 80, 200, 0.3);
+  border-color: rgba(130, 80, 200, 0.5);
+  color: #caaaf5;
+}
+
+.tabs .cloning-protocol-tab {
+  background: rgba(180, 120, 50, 0.18);
+  border-color: rgba(180, 120, 50, 0.36);
+  color: #d4a46a;
+  font-weight: 600;
+}
+.tabs .cloning-protocol-tab:hover { background: rgba(180, 120, 50, 0.26); }
+.tabs .cloning-protocol-tab.active {
+  background: rgba(180, 120, 50, 0.3);
+  border-color: rgba(180, 120, 50, 0.5);
+  color: #e8be88;
+}
+
+.tabs .growing-tips-tab {
+  background: rgba(60, 160, 70, 0.18);
+  border-color: rgba(60, 160, 70, 0.36);
+  color: #78d488;
+  font-weight: 600;
+}
+.tabs .growing-tips-tab:hover { background: rgba(60, 160, 70, 0.26); }
+.tabs .growing-tips-tab.active {
+  background: rgba(60, 160, 70, 0.3);
+  border-color: rgba(60, 160, 70, 0.5);
+  color: #98e8a8;
+}
+
+.request-dropdown {
+  background: rgba(110, 70, 180, 0.18);
+  border-color: rgba(110, 70, 180, 0.36);
+  color: #b090e0;
+  font-weight: 600;
+  min-width: 180px;
+  cursor: pointer;
+}
+
+/* ─── Content ────────────────────────────────── */
+
+.content {
+  padding: 1.25rem;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+}
+
+/* ─── Doc links / sections ───────────────────── */
+
+.doc-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.75rem;
+  background: var(--card-alt);
+  color: var(--text);
+  font-weight: 600;
+  transition: background 0.12s;
+}
+
+.doc-link-button:hover {
+  background: #2a3a4d;
+  border-color: var(--line-strong);
+}
+
+.doc-link-button.secondary {
+  background: var(--card);
+}
+
+.doc-section {
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+
+.doc-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.doc-list,
+.doc-list-numbered {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.doc-list li,
+.doc-list-numbered li {
+  line-height: 1.4;
+}
+
+/* ─── Grid & Card ────────────────────────────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Card title */
+.card > h2,
+.card > .header-row > h2 {
+  margin: 0 0 0.8rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Section heading inside card */
+.card h2 {
+  margin-top: 0;
+}
+
+/* ─── Flower layout ──────────────────────────── */
+
+.questionnaire-block .room-head {
+  align-items: baseline;
+}
+
+.producer-supplies-card {
+  width: min(1760px, calc(100vw - 2rem));
+  margin: 0 auto;
+}
+
+.flower-layout-card {
+  width: min(1760px, calc(100vw - 2rem));
+  margin: 0 auto;
+}
+
+.flower-layout-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0.6rem 0 0.9rem;
+}
+
+.flower-row-tile {
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--card-alt);
+  min-height: 84px;
+  display: grid;
+  gap: 0.18rem;
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.flower-row-tile.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.flower-row-tile strong {
+  font-size: 0.88rem;
+}
+
+.flower-row-tile span {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.flower-row-details h3 {
+  margin: 0 0 0.5rem;
+}
+
+/* ─── Header row / Summary / Days ───────────── */
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.summary .meter {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--card-alt);
+  overflow: hidden;
+  margin: 0.6rem 0 1rem;
+}
+
+.summary .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+}
+
+.days {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.days div {
+  flex: 1 1 0;
+  min-width: 130px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Week section headers ───────────────────── */
+
+.week-block {
+  margin-bottom: 1.5rem;
+}
+
+.week-block h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.week-block h3 small {
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ─── Schedule grid ──────────────────────────── */
+
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Day column: header + content area pattern */
+.day-col {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Column header */
+.day-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--card-alt);
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0.65rem;
+  flex-shrink: 0;
+}
+
+.day-col h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.day-date-small {
+  margin-left: 0.3rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.day-load-small {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Task rows inside a day column */
+.day-col > label.check-row,
+.day-col > .check-row {
+  padding: 0.48rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-size: 0.82rem;
+}
+
+.day-col > label.check-row:last-child,
+.day-col > .check-row:last-child {
+  border-bottom: none;
+}
+
+/* Completed task appearance */
+.check-row input[type='checkbox']:checked ~ span,
+.check-row input[type='checkbox']:checked + span {
+  text-decoration: line-through;
+  opacity: 0.45;
+}
+
+/* ─── Capacity states for day columns ────────── */
+
+/* Near capacity (7-8h) */
+.day-col.day-near-full .day-head {
+  background: rgba(232, 148, 74, 0.12);
+  border-bottom-color: rgba(232, 148, 74, 0.3);
+}
+
+.day-col.day-near-full .day-load-small {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+/* Over capacity (>8h) */
+.day-col.day-over-full .day-head {
+  background: rgba(248, 113, 113, 0.12);
+  border-bottom-color: rgba(248, 113, 113, 0.3);
+}
+
+.day-col.day-over-full .day-load-small {
+  color: #f87171;
+  font-weight: 700;
+}
+
+/* ─── Utility ────────────────────────────────── */
+
+.warning {
+  color: var(--warning);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ─── Room / category blocks ─────────────────── */
+
+/* Room = top-level section container */
+.room-block {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-top: 0.9rem;
+  background: var(--card);
+  overflow: hidden;
+}
+
+/* Room header bar */
+.room-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--card-alt);
+  border-bottom: 1px solid var(--line);
+  padding: 0.6rem 0.9rem;
+}
+
+.room-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* Room body padding */
+.room-block > :not(.room-head) {
+  padding: 0.6rem 0.9rem;
+}
+
+/* Category = sub-section within a room */
+.category-block {
+  margin: 0.5rem 0 0;
+  border: none;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.5rem 0 0;
+  background: transparent;
+}
+
+.category-block:first-of-type {
+  border-top: none;
+  margin-top: 0;
+}
+
+.category-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.category-head h4 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.category-head span {
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+/* ─── Task list ──────────────────────────────── */
+
+.task-list-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+
+.task-list-grid .task-card.compact {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.task-list-grid.gm-three-col {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.task-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0.7rem;
+  margin-bottom: 0;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+  transition: border-left-color 0.12s;
+}
+
+.task-card:hover {
+  border-left-color: var(--accent);
+}
+
+.task-card.compact {
+  padding: 0.6rem 0.75rem;
+  gap: 0.5rem;
+  grid-template-columns: 1fr;
+  width: 34%;
+  max-width: 460px;
+  min-width: 320px;
+  border-left-width: 3px;
+  border-left-color: var(--accent-border);
+}
+
+.task-card.compact:hover {
+  border-left-color: var(--accent);
+}
+
+.edit-task-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border-style: dashed;
+  border-left-style: solid;
+  border-left-color: var(--warning);
+}
+
+.task-main h4 {
+  margin: 0;
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.task-main p {
+  margin: 0.18rem 0;
+  font-size: 0.84rem;
+  color: var(--text-dim);
+}
+
+.scheduled-tag {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.task-controls {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.task-controls.inline-under-title {
+  margin-top: 0.35rem;
+  grid-template-columns: 1fr;
+  gap: 0.3rem;
+  max-width: 100%;
+}
+
+.task-controls.inline-under-title select,
+.task-controls.inline-under-title button {
+  padding: 0.3rem 0.45rem;
+  font-size: 0.82rem;
+}
+
+.task-controls.inline-under-title label {
+  font-size: 0.78rem;
+}
+
+.hours-field {
+  width: 128px;
+}
+
+.hours-field select {
+  width: 100%;
+}
+
+.row-select-field {
+  width: 100%;
+  max-width: 100%;
+}
+
+.day-pill-row {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.day-pill {
+  padding: 0.22rem 0.38rem;
+  min-width: 42px;
+  text-align: center;
+  background: var(--card-alt);
+  border-color: var(--line);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.day-pill.active-day {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.task-controls label {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ─── Question jump control ──────────────────── */
+
+.question-jump-control {
+  display: grid;
+  gap: 0.14rem;
+  min-width: 190px;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+.question-jump-control label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.question-jump-control input[type='range'] {
+  width: 100%;
+  margin: 0;
+}
+
+.question-jump-count {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ─── Task action row ────────────────────────── */
+
+.task-action-row {
+  margin-top: 0.35rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.task-action-row button {
+  width: 100%;
+  white-space: normal;
+  line-height: 1.15;
+  min-height: 2.4rem;
+  padding: 0.28rem 0.3rem;
+  font-size: 0.72rem;
+}
+
+.task-action-row.edit-window {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* ─── Calendar ───────────────────────────────── */
+
+.calendar-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.month-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.month-nav h2 {
+  margin: 0;
+  font-weight: 700;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+  gap: 0.75rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.month-head {
+  font-weight: 700;
+  text-align: center;
+  color: var(--accent);
+  background: var(--card-alt);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.month-cell {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem;
+  background: var(--card);
+  min-height: 170px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.month-cell:hover {
+  border-color: var(--line-strong);
+  background: var(--card-alt);
+}
+
+.month-cell h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.outside-month {
+  opacity: 0.35;
+}
+
+.small-note {
+  margin-top: 0.55rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.calendar-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  display: grid;
+  gap: 0.2rem;
+  background: var(--card-alt);
+}
+
+.calendar-item-tight {
+  padding: 0.35rem 0.4rem;
+}
+
+.two-month-grid-wrap {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.two-month-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.two-month-card h3 {
+  margin: 0 0 0.6rem;
+  font-weight: 700;
+}
+
+.two-month-card .month-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+  overflow-x: visible;
+}
+
+.two-month-card .month-head {
+  padding: 0.2rem 0.1rem;
+  font-size: 0.72rem;
+}
+
+.two-month-card .month-cell {
+  min-height: 90px;
+  padding: 0.32rem;
+}
+
+.two-month-card .month-cell h3 {
+  margin: 0 0 0.32rem;
+  font-size: 0.8rem;
+}
+
+.two-month-card .calendar-item {
+  padding: 0.22rem;
+  border-radius: 6px;
+  font-size: 0.68rem;
+}
+
+/* ─── Template items (Admin task list rows) ─── */
+
+/* Non-editing: look like a clean table row */
+.template-item:not(.editing) {
+  grid-template-columns: 2fr 1fr 1fr 0.7fr 0.7fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--card-alt);
+  border-radius: 8px;
+  border-left: 3px solid var(--line-strong);
+}
+
+.template-item:not(.editing):hover {
+  border-left-color: var(--accent);
+}
+
+/* Label-like muted text for sub-fields */
+.template-item:not(.editing) span {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.template-item:not(.editing) strong {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.template-item.editing {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  border-left: 3px solid var(--warning);
+  padding: 0.75rem;
+  background: var(--card-alt);
+  border-radius: 8px;
+}
+
+.template-item.editing > * {
+  min-width: 0;
+}
+
+.template-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0;
+}
+
+.template-delete-button {
+  margin-left: 0;
+  border-color: rgba(224, 82, 82, 0.4);
+  background: rgba(224, 82, 82, 0.12);
+  color: #e87878;
+  font-size: 0.8rem;
+}
+
+.template-delete-button:hover {
+  background: rgba(224, 82, 82, 0.22);
+  border-color: rgba(224, 82, 82, 0.55);
+}
+
+/* ─── Linked task picker ─────────────────────── */
+
+.linked-task-picker {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem;
+  background: var(--card);
+  display: grid;
+  gap: 0.65rem;
+  max-height: 820px;
+  min-height: 480px;
+  overflow: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.auto-task-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.65rem;
+  background: var(--card-alt);
+}
+
+.auto-task-row input,
+.auto-task-row select,
+.auto-task-row button {
+  min-width: 0;
+  min-height: 2.2rem;
+}
+
+.auto-task-row > input:first-child {
+  grid-column: 1 / -1;
+  min-height: 2.5rem;
+  font-size: 0.98rem;
+}
+
+.auto-task-row .full-span {
+  grid-column: 1 / -1;
+}
+
+.recurring-row {
+  gap: 0.3rem;
+}
+
+.auto-yearly-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+/* ─── Data entry ─────────────────────────────── */
+
+.data-entry-box {
+  margin-top: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem;
+  background: var(--card);
+  display: grid;
+  gap: 0.4rem;
+}
+
+.data-entry-box h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.data-entry-box textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 88px;
+}
+
+/* ─── Forms ──────────────────────────────────── */
+
+.form-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.88rem;
+}
+
+/* ─── Modal ──────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 999;
+  backdrop-filter: blur(3px);
+}
+
+.modal {
+  width: min(1240px, 100%);
+  max-height: 95vh;
+  overflow: auto;
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.8rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.9rem 1.25rem;
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.modal-body {
+  padding: 1.25rem;
+}
+
+/* ─── Check rows ─────────────────────────────── */
+
+.check-row {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  margin-bottom: 0.35rem;
+  font-size: 0.84rem;
+  line-height: 1.3;
+}
+
+.check-row span {
+  font-size: 0.84rem;
+  color: var(--text);
+}
+
+/* Completed state — applied when checkbox is checked */
+.check-row input[type='checkbox']:checked ~ span,
+.check-row input[type='checkbox']:checked + span {
+  text-decoration: line-through;
+  opacity: 0.4;
+}
+
+/* Calendar list items (admin template rows wrapper) */
+.calendar-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.day-col .link-button {
+  font-size: 0.74rem;
+  line-height: 1.1;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+/* ─── Inbox ──────────────────────────────────── */
+
+.inbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 0.9fr;
+  gap: 1rem;
+}
+
+.recipient-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+/* ─── Resources ──────────────────────────────── */
+
+.resource-head {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.resource-head.resource-head-compact {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  margin-bottom: 0.45rem;
+}
+
+.resource-sections {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.resource-section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: var(--card);
+}
+
+.resource-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.resource-rows {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.resource-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem;
+  display: grid;
+  gap: 0.3rem;
+  grid-template-columns:
+    minmax(0, 2fr)
+    minmax(260px, 1.6fr)
+    minmax(120px, 0.6fr)
+    minmax(160px, 1fr);
+  align-items: center;
+  background: var(--card-alt);
+}
+
+.resource-row .small-note {
+  margin: 0;
+}
+
+.resource-need-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.resource-sources {
+  margin-top: 0.8rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.65rem;
+}
+
+.resource-sources h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+/* ─── Message state ──────────────────────────── */
+
+.unread {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.read {
+  opacity: 0.65;
+}
+
+/* ─── Login screen ──────────────────────────── */
+
+.login-screen {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1rem 3rem;
+  gap: 1.75rem;
+}
+
+.login-logo {
+  text-align: center;
+}
+
+.login-logo h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  margin: 0;
+}
+
+.login-logo p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: var(--shadow);
+}
+
+.login-card h2 {
+  margin: 0 0 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.login-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.login-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.login-form input {
+  width: 100%;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.95rem;
+  background: var(--card-alt);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.login-error {
+  font-size: 0.82rem;
+  color: #f87171;
+  padding: 0.5rem 0.75rem;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  border-radius: 6px;
+}
+
+.login-submit {
+  width: 100%;
+  padding: 0.72rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  background: var(--accent);
+  color: #071a10;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-top: 0.25rem;
+  transition: background 0.15s;
+}
+
+.login-submit:hover {
+  background: var(--accent-dim);
+}
+
+/* Test credentials reference table */
+.login-creds {
+  width: 100%;
+  max-width: 500px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.login-creds-header {
+  padding: 0.55rem 1rem;
+  background: var(--card-alt);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.login-creds table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.login-creds th {
+  text-align: left;
+  padding: 0.38rem 1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--card-alt);
+  border-bottom: 1px solid var(--line);
+}
+
+.login-creds td {
+  padding: 0.42rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-dim);
+}
+
+.login-creds tr:last-child td {
+  border-bottom: none;
+}
+
+.login-creds td:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.login-creds td code {
+  font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  font-size: 0.8rem;
+  background: var(--card-alt);
+  padding: 0.1rem 0.38rem;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+/* Topbar auth elements */
+.topbar-auth {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--line);
+  margin-left: 0.25rem;
+}
+
+.topbar-user {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.topbar-logout {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.3);
+  color: #f87171;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.topbar-logout:hover {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+/* ─── Responsive ─────────────────────────────── */
+
+@media (max-width: 1000px) {
+  .tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .tabs-left,
+  .tabs-center,
+  .tabs-right {
+    justify-content: flex-start;
+  }
+
+  .tabs.tabs-producer .producer-tab-row {
+    justify-content: center;
+  }
+
+  .schedule-grid,
+  .inbox-grid,
+  .template-item,
+  .resource-row {
+    grid-template-columns: 1fr;
+  }
+
+  .task-card {
+    grid-template-columns: 1fr;
+  }
+
+  .task-card.compact {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .task-list-grid.gm-three-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-columns {
+    grid-template-columns: repeat(4, minmax(180px, 1fr));
+  }
+
+  .month-grid {
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+  }
+
+  .two-month-grid-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .two-month-card .month-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .flower-layout-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .auto-task-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .task-list-grid.gm-three-col {
+    grid-template-columns: 1fr;
+  }
+
+  .days div {
+    min-width: 120px;
+  }
+
+  .flower-layout-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .two-month-card .month-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .auto-task-row {
+    grid-template-columns: 1fr;
+  }
+}

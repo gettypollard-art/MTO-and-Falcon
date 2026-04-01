@@ -1,0 +1,32 @@
+name: starling_pursuit
+description: "Falcon field data capture app"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_map: ^8.2.2
+  flutter_local_notifications: ^19.4.2
+  flutter_timezone: ^4.1.1
+  geolocator: ^14.0.2
+  http: ^1.2.2
+  intl: ^0.20.2
+  latlong2: ^0.9.1
+  path_provider: ^2.1.5
+  speech_to_text: ^7.3.0
+  timezone: ^0.10.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/

@@ -1,0 +1,33 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Python virtual envs
+.venv/
+**/.venv/
+venv/
+**/venv/
+
+# Node
+node_modules/
+**/node_modules/
+
+# Flutter/Dart
+.dart_tool/
+**/.dart_tool/
+build/
+**/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# iOS/Android generated
+ios/Pods/
+**/ios/Pods/
+android/.gradle/
+**/android/.gradle/

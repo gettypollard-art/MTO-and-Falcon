@@ -1,0 +1,170 @@
+[
+  {
+    "title": "Metric reconciliation",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Deposit Runs and Deposit Email, check for accuracy",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Product is on the floor, cabinet appeal, jar spacing, para cabinet, cleanliness, cleaning supplies, office supplies",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Supplies arrival",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Camera check",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Exterior Building Check: Plants, Roof, Yard, Ice",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Dispensary supplies: Drams, Exit bags, stickers, ink, paper, overall cleanliness, bathrooms, floors, walls, glass, cob webs, AC unit",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Clean AC Heads in TD building",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "HR Schedule",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Cameras working in all areas",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Product intake and Manifest accepting in 5 days..",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Alarms working in all areas",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Inventory assessment: check each product category and depth of offering",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Vendor Order Placement",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Change Bank",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Log in sheets are being used",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Trash Removal",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Check on product quantities",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2.0
+  },
+  {
+    "title": "Make more ounce deals",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Monday 7th JO pick up, 8th deposit",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Para order pay for with Debit card",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "TD: Revolving Task List: for downtime.",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "Tent Cards for All Flower: Danae",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  },
+  {
+    "title": "OLCC email",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1.0
+  }
+]

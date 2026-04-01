@@ -1,0 +1,450 @@
+[
+  {
+    "title": "Water Mothers",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 1,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Schedule Mother to water again",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 3,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Inspect for bugs",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 2,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Prune Moms",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 3,
+    "defaultHours": 0.5
+  },
+  {
+    "title": "Feed",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 3,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Rotate/Prune Mothers so they are not touching each other",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 3,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Spray soap and water",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 1,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "pH Soil Mother, send data to GM/CEO",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 1,
+    "defaultHours": 0.5
+  },
+  {
+    "title": "Water 2 gallons",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 1,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Schedule Next watering",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 2,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Inspect for bugs",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 3,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Do they need to be topped? Stay below 16 inches.",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Spread out the canopy",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 3,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Increase light intensity or timer to 18 to 22 hours",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 3,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Remove dead leaves",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 3,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Mother replacement candidates",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 4,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Spray soap and water",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 2,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Transfer veg plants to flower room",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 2,
+    "defaultHours": 1
+  },
+  {
+    "title": "Do you need to vacuum",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 5,
+    "defaultHours": 0.5
+  },
+  {
+    "title": "Do you need to clean the trough?",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 5,
+    "defaultHours": 0.5
+  },
+  {
+    "title": "Do you need to change out RO filters?",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 5,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Humidity level check",
+    "room": "VEG ROOM",
+    "category": "Clones",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Water clones",
+    "room": "VEG ROOM",
+    "category": "Clones",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Are roots visible? Schedule when to pot.",
+    "room": "VEG ROOM",
+    "category": "Clones",
+    "priority": 2,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Do we need to make more clones",
+    "room": "VEG ROOM",
+    "category": "Clones",
+    "priority": 2,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Exhaust fans running",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 3,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Lights working",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 4,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Check for bugs",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 2,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Water rows",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Do you need to prop up plants with stakes?",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 3,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "pH Soil day 30",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 2,
+    "defaultHours": 0.5
+  },
+  {
+    "title": "Soil samples take and send into Logan Labs",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 1,
+    "defaultHours": 1
+  },
+  {
+    "title": "Harvest buck wet trim. Place buds in drying baskets in drying room per row.",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 1,
+    "defaultHours": 4
+  },
+  {
+    "title": "Add soil amendments and rototill soil 3 rows",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 2,
+    "defaultHours": 2
+  },
+  {
+    "title": "Do you need to vacuum",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 3,
+    "defaultHours": 2
+  },
+  {
+    "title": "Do you need to clean the trough?",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 4,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Do you need to change out RO filters?",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 4,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Check moisture levels on buds etc.",
+    "room": "DRYING ROOM",
+    "category": "Buds",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Dry trim, touch up, and bag. Create metric tag report tag ZB and weight of package.",
+    "room": "DRYING ROOM",
+    "category": "Buds",
+    "priority": 1,
+    "defaultHours": 1
+  },
+  {
+    "title": "Mold present",
+    "room": "DRYING ROOM",
+    "category": "Buds",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Vacuum and clean west room",
+    "room": "WEST ROOM",
+    "category": "Buds",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Equipment item: when do you need it replaced by?",
+    "room": "OTHER",
+    "category": "Equipment and Supplies",
+    "priority": 3,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Supplies request",
+    "room": "OTHER",
+    "category": "Equipment and Supplies",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Do you need any soil ingredients list items to be generated materials?",
+    "room": "OTHER",
+    "category": "Equipment and Supplies",
+    "priority": 3,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Clones made tag numbers list sent to TD General Manager ZB",
+    "room": "VEG ROOM",
+    "category": "Clones",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Veg plants made tag numbers list sent to TD Manager ZB",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 1,
+    "defaultHours": 0.3333
+  },
+  {
+    "title": "Harvested plants tag numbers list sent to TD Manager ZB",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 1,
+    "defaultHours": 0.25
+  },
+  {
+    "title": "Water off, check float valves",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Throw trash away",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "No food or dishes left out",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Overhead lights turned off",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Sign out T-sheets",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Overhead, lock doors, support flower drying in back",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Sign out of LOG",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 1,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Lock gate",
+    "room": "OTHER",
+    "category": "Closing Duties",
+    "priority": 3,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Plant death report tag numbers list sent to TD Manager ZB",
+    "room": "FLOWER ROOM",
+    "category": "Flowers",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Plant death report tag numbers list sent to TD Manager ZB",
+    "room": "VEG ROOM",
+    "category": "2 Gal Plants",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Plant death report tag numbers list sent to TD Manager ZB",
+    "room": "VEG ROOM",
+    "category": "Mothers Inspection",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Plant death report tag numbers list sent to TD Manager ZB",
+    "room": "VEG ROOM",
+    "category": "Clones",
+    "priority": 1,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Dehumidifier dryer working properly",
+    "room": "OTHER",
+    "category": "Other",
+    "priority": 2,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Check other reservoirs",
+    "room": "OTHER",
+    "category": "Other",
+    "priority": 2,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Look for leaks in trough",
+    "room": "OTHER",
+    "category": "Other",
+    "priority": 2,
+    "defaultHours": 0.0833
+  },
+  {
+    "title": "Take garbage outside",
+    "room": "OTHER",
+    "category": "Other",
+    "priority": 3,
+    "defaultHours": 0.1667
+  },
+  {
+    "title": "Check that timers are good",
+    "room": "OTHER",
+    "category": "Other",
+    "priority": 2,
+    "defaultHours": 0.0833
+  }
+]

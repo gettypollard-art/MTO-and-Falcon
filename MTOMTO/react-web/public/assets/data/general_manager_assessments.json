@@ -1,0 +1,590 @@
+[
+  {
+    "title": "Metric Update: new Clones, Veg to Flower, Plant death, Harvest Data, Create Packages in Metrc,",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Temp Humidity Check",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Metric reconciliation",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Deposit Runs and Deposit Email, check for accuracy",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Do we have enough preroll supplies to continue",
+    "room": "TD Prerolls",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "VEG ROOM: Mothers Health: soil moisture, leave tissue, bugs, color, red veins, Prune, ready for clones? Are plants touching, do they need to be cut shorter",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Bud in Baskets ready for dry trim touch up",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Product is on the floor, cabinet appeal, jar spacing, para cabinet, cleanliness, cleaning supplies, office supplies",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Supplies arrival",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Does Joseph have Buds for prerolls",
+    "room": "TD Prerolls",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "2Gallons: Soil Moisture, Timer 18-22 hours, feeding, light height, spacing, do they need to pruned, do they need to be transplanted, bugs",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Drying Buds Moisture check.",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Check cameras via time stamp",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Exterior Building Check: Plants, Roof, Yard, Ice",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Clones: Humidity level,Temperature, Roots present, Transplant",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Dry Trimming Touchup",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Dispensary supplies: Drams, Exit bags, stickers, ink, paper, overall cleanliness, bathrooms, floors, walls, glass, cob webs, AC unit",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Clean AC Heads in TD building",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "FLOWER:Temp, Humidity Check, Light Check, Fans working",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 5,
+    "defaultHours": 0.5
+  },
+  {
+    "title": "HR Schedule",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Cameras working in all areas",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Walk through rows: Plant health, bugs, when to prune, When to harvest, Soil Moisture",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Packaging and Metrc tags",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Product intake and Manifest accepting in 5 days..",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Alarms working in all areas",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Identify Cleaning Tasks: Webs, Dirt, etc",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 4,
+    "defaultHours": 0.75
+  },
+  {
+    "title": "Scheduling Testing",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Inventory assessment: check each product category and depth of offering",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Check on Supply status: Perlite, Dirt, Amendments, Check Trash, Check Freezers",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Testing Conducted",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Vendor Order Placement",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "core sample flower beds and run pH and ppm",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1.5
+  },
+  {
+    "title": "Change Bank",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "vacumm Floors",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 5,
+    "defaultHours": 0.5
+  },
+  {
+    "title": "Testing results are back",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Log in sheets are being used",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Homogenize soil, by turning it...mixing it, then take a core sample for lab testing",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Cleaning Needs",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 4,
+    "defaultHours": 0.75
+  },
+  {
+    "title": "Trash Removal",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Check on product quantities",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  },
+  {
+    "title": "Make more ounce deals",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Get austin a working computers find a charger on amazon",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Plan on all mothers being gone in 2 weeks: flower, killed or unhealthy",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Monday 7th JO pick up, 8th deposit",
+    "room": "MISC",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Zack make Fat Bananna clones, new totes, new water, add 1tsp calmag to water,fill tote with discs so no light, pH water and fill tote half full",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Make packages for 2nd harvest",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Pressure cooker, strainer, 5 gallon plastic containers food grade, silicone plastic hot mits... strainer metal, gamut packaging 4 oz jars..",
+    "room": "TD Prerolls",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Kill all remaining clones in totes, Transplant all green material in the next 1-3 weeks in rows 1,2,: Put Auto flower seeds into rows 3,4 after harvested and put autoflower seeds into rows 5,6,7,8,9 ASAP.",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "buck hanging plants",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Preroll 10 pack, 5 pack cartons with logo...get pricing from Gamut...when you get 4 oz jars for topicals",
+    "room": "TD Prerolls",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Trash needs taken out.",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "plants to freezer....",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Flower Room: switch out half out light....take a picture of half out light and we can send that into Fohse for replacement...",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Flower room: Have austin water without pH down for 2 weeks of watering, then test pH of soil (beds with no lights on). Add CalMag to watering flowering plants until Harvest.: Add 5 teaspons per Flower Trough 170 gallons.",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Feed CalMag to Mothers...and all veg plants each watering until April 12th...",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Prune all dead material off mothers...",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "order seeds: 120 auto per strains (7)....planted ASAP.",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Regular/Fem Seeds: new moms/strains 10 , 10 seeds each",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Start soaking seeds in paper asap",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "JO trip: GP: bud,glass,2 slides, take back shell, clone domes, CASH",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Austin Hotlist build out his task each week and get him using it each day",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Put flower into TD Retail",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Para order pay for with Debit card",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "preroll also",
+    "room": "TD Drying Room",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "TD: Revolving Task List: for downtime.",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Update Austins HL and make sure he is doing it",
+    "room": "TD Producer",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Tent Cards for All Flower: Danae",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Processor supplies list generate",
+    "room": "TD Prerolls",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "OLCC email",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Look for incoming metric transfers",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 1
+  },
+  {
+    "title": "Check cleaning supplies",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1
+  },
+  {
+    "title": "Check supplies for retail store",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1
+  },
+  {
+    "title": "Check exit bags, MJ stickers, latex gloves",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1
+  },
+  {
+    "title": "Visually check for leaks",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1
+  },
+  {
+    "title": "Check mail",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Pick up garbage outside building",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Take garbage to waste transfer station",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Water plants outside",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Recycling taken out",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 3,
+    "defaultHours": 1
+  },
+  {
+    "title": "Get change from the bank for the till",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1
+  },
+  {
+    "title": "Order paraphernalia, drams, cones, tubes",
+    "room": "Retail TD",
+    "category": "General Manager",
+    "priority": 2,
+    "defaultHours": 1
+  },
+  {
+    "title": "Talk with Tyrel",
+    "room": "Joe retail",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 1
+  },
+  {
+    "title": "Talk with Bud Tenders",
+    "room": "Joe retail",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 1
+  },
+  {
+    "title": "Make sure Google Calendar for employees is filled out six months in advance",
+    "room": "Joe retail",
+    "category": "General Manager",
+    "priority": 1,
+    "defaultHours": 2
+  }
+]
