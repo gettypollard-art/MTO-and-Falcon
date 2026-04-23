@@ -387,13 +387,15 @@ export function runAdvisor(input: AdvisorInput): PricingRecommendation {
     }
   }
 
-  let { price: suggestedPrice, marginGuarded } = computeSuggestedPrice(
+  const suggested = computeSuggestedPrice(
     input.ourPrice,
     input.ourCost,
     action,
     stats,
     minMarginPct,
   );
+  let suggestedPrice = suggested.price;
+  const marginGuarded = suggested.marginGuarded;
 
   // ── Business rules override ────────────────────────────
   const ruleResult = evaluateRules(

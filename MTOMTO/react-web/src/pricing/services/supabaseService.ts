@@ -280,7 +280,14 @@ export async function fetchCompetitorStoreNames(region?: string): Promise<string
   const { data, error } = await q;
   if (error) throw new Error(error.message);
   const names = (data ?? []) as { dispensary_name: string }[];
-  return [...new Set(names.map((r) => r.dispensary_name))];
+  const normalized = new Map<string, string>();
+  for (const row of names) {
+    const name = String(row.dispensary_name ?? '').trim();
+    if (!name) continue;
+    const key = name.toLocaleLowerCase();
+    if (!normalized.has(key)) normalized.set(key, name);
+  }
+  return Array.from(normalized.values()).sort((a, b) => a.localeCompare(b));
 }
 
 // ── File Upload (Supabase Storage) ────────────────────────

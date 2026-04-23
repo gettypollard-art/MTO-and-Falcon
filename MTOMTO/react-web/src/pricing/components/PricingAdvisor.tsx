@@ -13,6 +13,8 @@ interface Props {
   recommendations: PricingRecommendation[];
 }
 
+const currentTimeMs = (): number => new Date().getTime();
+
 // ── Action display config ─────────────────────────────────
 
 const ACTION_META: Record<PricingAction, { label: string; color: string; bg: string }> = {
@@ -68,7 +70,7 @@ function FreshnessBadge({ freshnessScore, oldestCaptureMs }: { freshnessScore: n
   if (freshnessScore === 0 && oldestCaptureMs === 0) return <span style={{ color: 'var(--muted)', fontSize: '0.70rem' }}>—</span>;
   const pct = Math.round(freshnessScore * 100);
   const color = pct >= 75 ? '#1a7a3c' : pct >= 40 ? '#7d5a00' : '#c0392b';
-  const ageDays = oldestCaptureMs > 0 ? Math.floor((Date.now() - oldestCaptureMs) / 86_400_000) : null;
+  const ageDays = oldestCaptureMs > 0 ? Math.floor((currentTimeMs() - oldestCaptureMs) / 86_400_000) : null;
   const label = ageDays != null ? `${ageDays}d ago` : `${pct}%`;
   return (
     <span title={`Data freshness ${pct}%${ageDays != null ? ` — oldest record ${ageDays} days ago` : ''}`} style={{ fontSize: '0.70rem', color, cursor: 'help' }}>

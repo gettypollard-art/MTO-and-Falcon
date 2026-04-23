@@ -31,14 +31,25 @@ function aggregateByMonth(sales: MtoMonthlySales[]): MonthlyStatsRow[] {
 export function useRawMonthlySales(storeId: string): MtoMonthlySales[] {
   const [data, setData] = useState<MtoMonthlySales[]>([]);
 
-  const load = useCallback(async () => {
-    if (!storeId || !isSupabaseConfigured()) { setData([]); return; }
-    try {
-      setData(await fetchMonthlySales(storeId));
-    } catch { setData([]); }
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!storeId || !isSupabaseConfigured()) {
+        if (!cancelled) setData([]);
+        return;
+      }
+      try {
+        const sales = await fetchMonthlySales(storeId);
+        if (!cancelled) setData(sales);
+      } catch {
+        if (!cancelled) setData([]);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [storeId]);
-
-  useEffect(() => { void load(); }, [load]);
   return data;
 }
 
@@ -69,7 +80,36 @@ export function useMonthlyStats(
     }
   }, [storeId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!storeId || !isSupabaseConfigured()) {
+        if (!cancelled) {
+          setData([]);
+          setLoading(false);
+          if (!storeId) setError(null);
+          else setError('Supabase not configured');
+        }
+        return;
+      }
+      if (!cancelled) {
+        setLoading(true);
+        setError(null);
+      }
+      try {
+        const sales = await fetchMonthlySales(storeId);
+        if (!cancelled) setData(aggregateByMonth(sales));
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load monthly stats');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId]);
 
   return { data, loading, error, refresh: load };
 }

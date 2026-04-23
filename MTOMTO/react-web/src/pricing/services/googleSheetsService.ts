@@ -10,9 +10,11 @@ export function isGoogleSheetsConfigured(): boolean {
 }
 
 export async function exportToGoogleSheets(
-  _spreadsheetId: string,
-  _rows: ExportRow[],
+  spreadsheetId: string,
+  rows: ExportRow[],
 ): Promise<boolean> {
+  void spreadsheetId;
+  void rows;
   if (!API_KEY) {
     return false;
   }

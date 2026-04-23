@@ -18,9 +18,11 @@ export function isDutchieConfigured(): boolean {
 }
 
 export async function fetchDutchieListings(
-  _region: Region,
-  _category: ProductCategory,
+  region: Region,
+  category: ProductCategory,
 ): Promise<DutchieListing[]> {
+  void region;
+  void category;
   if (!API_KEY) {
     return [];
   }

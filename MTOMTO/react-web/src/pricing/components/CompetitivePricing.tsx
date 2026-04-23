@@ -109,7 +109,6 @@ function useScraper() {
 
 interface Props {
   defaultStoreId: string;
-  storeRegion: Region;
   storeLocation?: string;
   reorderSuggestions?: MtoReorderSuggestion[];
   rules: BusinessRule[];
@@ -119,46 +118,81 @@ interface Props {
 }
 
 export function CompetitivePricingTab({
-  defaultStoreId, storeRegion, storeLocation, reorderSuggestions,
+  defaultStoreId, storeLocation, reorderSuggestions,
   rules, onAddRule, onRemoveRule, onToggleRule,
 }: Props) {
   const ourStores = useStores();
 
-  // ── Our store picker (Joseph / The Dalles) ──
+  // ── Options ──
   const [ourStoreId, setOurStoreId]         = useState<string>(defaultStoreId);
-  const [selectedRegion, setSelectedRegion] = useState<Region>(storeRegion);
+  const [selectedRegion, setSelectedRegion] = useState<Region>('All');
   const [filterCategory, setFilterCategory] = useState<ProductCategory | ''>('');
   const [filterCompetitor, setFilterCompetitor] = useState<string>('');
 
-  // Keep ourStoreId in sync if parent changes
-  useEffect(() => { if (defaultStoreId) setOurStoreId(defaultStoreId); }, [defaultStoreId]);
-
-  // When our store changes, auto-set region to that store's region
-  useEffect(() => {
-    const store = ourStores.data.find((s) => s.id === ourStoreId);
-    if (store) setSelectedRegion(store.region);
-  }, [ourStoreId, ourStores.data]);
-
-  const ourStore   = ourStores.data.find((s) => s.id === ourStoreId) ?? null;
-  const ourProducts = useProducts(ourStoreId);
+  const resolvedOurStoreId = ourStoreId || defaultStoreId;
+  const ourStore   = ourStores.data.find((s) => s.id === resolvedOurStoreId) ?? null;
+  const ourProducts = useProducts(resolvedOurStoreId);
 
   const { state: scraper, startScrape } = useScraper();
 
   const regional         = useRegionalPricing(selectedRegion);
   const scraped          = useCompetitorProducts(selectedRegion);
-  const competitorStores = useCompetitorStores(selectedRegion);
+  const competitorStores = useCompetitorStores(
+    selectedRegion,
+    `${scraper.status}|${scraper.finished_at ?? ''}|${scraped.data.length}`,
+  );
 
   // Last-scraped freshness
   const [lastScraped, setLastScraped] = useState<string | null>(null);
+  const [lastScrapedAgeDays, setLastScrapedAgeDays] = useState<number | null>(null);
   useEffect(() => {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupabaseConfigured()) {
+      queueMicrotask(() => {
+        setLastScraped(null);
+        setLastScrapedAgeDays(null);
+      });
+      return;
+    }
     fetchLastScrapedAt(selectedRegion !== 'All' ? selectedRegion : undefined)
-      .then(setLastScraped)
-      .catch(() => setLastScraped(null));
+      .then((value) => {
+        setLastScraped(value);
+        if (!value) {
+          setLastScrapedAgeDays(null);
+          return;
+        }
+        const parsed = new Date(value).getTime();
+        if (Number.isNaN(parsed)) {
+          setLastScrapedAgeDays(null);
+          return;
+        }
+        const days = Math.floor((new Date().getTime() - parsed) / 86_400_000);
+        setLastScrapedAgeDays(Math.max(0, days));
+      })
+      .catch(() => {
+        setLastScraped(null);
+        setLastScrapedAgeDays(null);
+      });
   }, [selectedRegion, scraped.data.length]);
 
-  // Reset competitor filter when region changes (old store may not exist in new region)
-  useEffect(() => { setFilterCompetitor(''); }, [selectedRegion]);
+  // When scrape completes, refresh both store lists and competitor rows.
+  useEffect(() => {
+    if (scraper.status !== 'done') return;
+    void scraped.refresh();
+    void ourStores.refresh();
+  }, [scraper.status, scraper.finished_at, scraped, ourStores]);
+
+  const competitorStoreOptions = useMemo(() => {
+    const fromRegional = regional.data
+      .map((row) => String(row.competitor_name ?? '').trim())
+      .filter((name) => name.length > 0);
+    const fromScraped = competitorStores;
+    const unique = new Map<string, string>();
+    for (const name of [...fromRegional, ...fromScraped]) {
+      const key = name.toLocaleLowerCase();
+      if (!unique.has(key)) unique.set(key, name);
+    }
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+  }, [regional.data, competitorStores]);
 
   const recommendations = usePricingAdvisor({
     products:           ourProducts.data,
@@ -272,10 +306,13 @@ export function CompetitivePricingTab({
       </div>
 
       {/* ── Filter row 1: Our Store | Region | Category ── */}
+      <div style={{ marginBottom: '0.35rem', fontSize: '0.76rem', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--muted)' }}>
+        OPTIONS
+      </div>
       <div className="pricing-form-row" style={{ marginBottom: '0.5rem' }}>
         <label>
           Our Store
-          <select value={ourStoreId} onChange={(e) => setOurStoreId(e.target.value)}>
+          <select value={resolvedOurStoreId} onChange={(e) => setOurStoreId(e.target.value)}>
             {ourStores.data.length === 0
               ? <option value="">Loading…</option>
               : ourStores.data.map((s) => (
@@ -285,10 +322,22 @@ export function CompetitivePricingTab({
           </select>
         </label>
         <label>
+          Competitor Store
+          <select value={filterCompetitor} onChange={(e) => setFilterCompetitor(e.target.value)}>
+            <option value="">All Competitors ({competitorStoreOptions.length})</option>
+            {competitorStoreOptions.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
           Region
           <select
             value={selectedRegion}
-            onChange={(e) => setSelectedRegion(e.target.value as Region)}
+            onChange={(e) => {
+              setSelectedRegion(e.target.value as Region);
+              setFilterCompetitor('');
+            }}
           >
             {regions.map((r) => (
               <option key={r} value={r}>{regionLabels[r]}</option>
@@ -301,19 +350,6 @@ export function CompetitivePricingTab({
             <option value="">All Categories</option>
             {productCategories.map((c) => (
               <option key={c} value={c}>{categoryLabels[c]}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {/* ── Filter row 2: Competitor store ── */}
-      <div className="pricing-form-row" style={{ marginBottom: '0.8rem' }}>
-        <label style={{ flexBasis: '100%' }}>
-          Competitor Store
-          <select value={filterCompetitor} onChange={(e) => setFilterCompetitor(e.target.value)}>
-            <option value="">All Competitors ({competitorStores.length})</option>
-            {competitorStores.map((name) => (
-              <option key={name} value={name}>{name}</option>
             ))}
           </select>
         </label>
@@ -332,8 +368,8 @@ export function CompetitivePricingTab({
           {scraped.data.length > 0 && (
             <> &nbsp;·&nbsp; {scraped.data.length.toLocaleString()} competitor products</>
           )}
-          {lastScraped && (() => {
-            const days = Math.floor((Date.now() - new Date(lastScraped).getTime()) / 86_400_000);
+          {lastScraped && lastScrapedAgeDays !== null && (() => {
+            const days = lastScrapedAgeDays;
             const label = days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`;
             const stale = days > 7;
             return (

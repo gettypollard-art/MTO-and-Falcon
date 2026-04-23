@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent, ReactNode } from 'react';
+import type { DragEvent, FormEvent, ReactNode } from 'react';
 import { AppController, UI } from './controller';
 import {
   roleCanAdmin,
@@ -22,12 +22,14 @@ import { producerResourceStorageKey } from './backend/runtimeStore';
 import { producerResourceSections } from './producerResources';
 import { PricingModule } from './pricing/components/PricingModule';
 import { authenticate, clearStoredRole, defaultCredentials, getStoredRole, storeRole } from './auth';
+import * as XLSX from 'xlsx';
 import './App.css';
 
 type TabKey =
   | 'weekly'
   | 'calendar'
   | 'taskList'
+  | 'amendSoilCalc'
   | 'mothersChart'
   | 'twoGalsChart'
   | 'flowerRoomRowChart'
@@ -81,8 +83,123 @@ type TimelineEvent = {
   dateIso: string;
 };
 
+type SoilMetricTemplate = {
+  key: string;
+  label: string;
+  unit: string;
+  targetValue: number;
+  targetMin: number;
+  targetMax: number;
+  normalizedGroup: 'core' | 'saturation' | 'ppm';
+  amendmentName: string;
+  potencyPerLbPerRow: number;
+};
+
+const producerAmendSoilStorageKey = 'm.producer.amend_soil_calculator.v1';
+const soilMetricTemplates: SoilMetricTemplate[] = [
+  { key: 'ph', label: 'pH', unit: 'pH', targetValue: 6.1, targetMin: 5.7, targetMax: 6.4, normalizedGroup: 'core', amendmentName: 'Lime / pH correction blend', potencyPerLbPerRow: 0.08 },
+  { key: 'cec', label: 'CEC', unit: 'meq', targetValue: 30, targetMin: 20, targetMax: 50, normalizedGroup: 'core', amendmentName: 'CEC builder blend (peat/clay/organic)', potencyPerLbPerRow: 0.8 },
+  { key: 'om', label: 'Organic Matter', unit: '%', targetValue: 12.5, targetMin: 10, targetMax: 15, normalizedGroup: 'core', amendmentName: 'Compost / organic matter blend', potencyPerLbPerRow: 0.4 },
+  { key: 'phosphorous', label: 'Phosphorous', unit: 'lbs/acre', targetValue: 1000, targetMin: 800, targetMax: 1200, normalizedGroup: 'ppm', amendmentName: 'Soft rock phosphate', potencyPerLbPerRow: 80 },
+  { key: 'potassiumPct', label: 'Potassium saturation', unit: '%', targetValue: 6, targetMin: 5, targetMax: 7, normalizedGroup: 'saturation', amendmentName: 'Potassium phosphate MKP 0-52-34', potencyPerLbPerRow: 0.3 },
+  { key: 'sulfur', label: 'Sulfur', unit: 'ppm', targetValue: 200, targetMin: 150, targetMax: 250, normalizedGroup: 'ppm', amendmentName: 'Gypsum', potencyPerLbPerRow: 18 },
+  { key: 'calciumPct', label: 'Calcium saturation', unit: '%', targetValue: 70, targetMin: 68, targetMax: 72, normalizedGroup: 'saturation', amendmentName: 'Gypsum / wollastonite', potencyPerLbPerRow: 1.1 },
+  { key: 'magnesiumPct', label: 'Magnesium saturation', unit: '%', targetValue: 19, targetMin: 17, targetMax: 21, normalizedGroup: 'saturation', amendmentName: 'Dolomite lime', potencyPerLbPerRow: 0.7 },
+  { key: 'iron', label: 'Iron', unit: 'ppm', targetValue: 245, targetMin: 225, targetMax: 265, normalizedGroup: 'ppm', amendmentName: 'Iron sulfate', potencyPerLbPerRow: 10 },
+  { key: 'manganese', label: 'Manganese', unit: 'ppm', targetValue: 55, targetMin: 45, targetMax: 65, normalizedGroup: 'ppm', amendmentName: 'Manganese sulfate', potencyPerLbPerRow: 4 },
+  { key: 'zinc', label: 'Zinc', unit: 'ppm', targetValue: 25, targetMin: 20, targetMax: 30, normalizedGroup: 'ppm', amendmentName: 'Zinc sulfate', potencyPerLbPerRow: 2.5 },
+  { key: 'copper', label: 'Copper', unit: 'ppm', targetValue: 7, targetMin: 5, targetMax: 9, normalizedGroup: 'ppm', amendmentName: 'Copper sulfate', potencyPerLbPerRow: 0.5 },
+  { key: 'boron', label: 'Boron', unit: 'ppm', targetValue: 4.5, targetMin: 3, targetMax: 6, normalizedGroup: 'ppm', amendmentName: 'Solubor (Boron)', potencyPerLbPerRow: 0.25 },
+  { key: 'sodiumPct', label: 'Sodium saturation', unit: '%', targetValue: 1.5, targetMin: 0, targetMax: 3, normalizedGroup: 'saturation', amendmentName: 'Leaching / calcium balancing', potencyPerLbPerRow: 0.1 },
+  { key: 'aluminum', label: 'Aluminum', unit: 'ppm', targetValue: 250, targetMin: 0, targetMax: 500, normalizedGroup: 'ppm', amendmentName: 'pH correction + Ca balancing', potencyPerLbPerRow: 1 },
+];
+
+type SoilNeedClass = 'Raise aggressively' | 'Raise moderately' | 'Hold / maintenance only' | 'Stop adding / avoid';
+
 function normalized(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function isTransferTaskTitle(title: string): boolean {
+  return normalized(title).includes('transfer veg plants to flower room');
+}
+
+function recurringWeekdaysForTask(task: AutoScheduledTaskDraft): number[] {
+  const source = Array.isArray(task.recurringWeekdays) && task.recurringWeekdays.length > 0
+    ? task.recurringWeekdays
+    : typeof task.recurringWeekday === 'number'
+      ? [task.recurringWeekday]
+      : [];
+  return Array.from(
+    new Set(
+      source
+        .map((day) => Number(day))
+        .filter((day) => Number.isFinite(day))
+        .map((day) => Math.max(0, Math.min(6, Math.floor(day)))),
+    ),
+  ).sort((a, b) => a - b);
+}
+
+function templateRecurrenceWeekdays(value: number[] | undefined): number[] {
+  return Array.from(
+    new Set(
+      (Array.isArray(value) ? value : [])
+        .map((day) => Number(day))
+        .filter((day) => Number.isFinite(day))
+        .map((day) => Math.max(0, Math.min(6, Math.floor(day)))),
+    ),
+  ).sort((a, b) => a - b);
+}
+
+function parseSoilNumber(value: string): number | null {
+  const cleaned = value.replace(/[^0-9.-]/g, '');
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function classifySoilNeed(metric: SoilMetricTemplate, measured: number): SoilNeedClass {
+  const key = metric.key;
+
+  if (
+    (key === 'sulfur' && measured > 250)
+    || (key === 'zinc' && measured > 30)
+    || (key === 'phosphorous' && measured > 1200)
+    || (key === 'magnesiumPct' && measured > 21)
+    || (key === 'sodiumPct' && measured >= 2.8)
+    || (key === 'ph' && measured > 6.4)
+  ) {
+    return 'Stop adding / avoid';
+  }
+
+  if (measured >= metric.targetMin && measured <= metric.targetMax) {
+    return 'Hold / maintenance only';
+  }
+
+  if (measured < metric.targetMin) {
+    if (
+      key === 'phosphorous'
+      || key === 'calciumPct'
+      || key === 'potassiumPct'
+      || key === 'manganese'
+      || key === 'copper'
+      || key === 'boron'
+      || (key === 'iron' && measured < 225)
+      || (key === 'cec' && measured < 20)
+    ) {
+      return 'Raise aggressively';
+    }
+    if (
+      (key === 'ph' && measured < 5.7)
+      || (key === 'sulfur' && measured < 150)
+      || (key === 'magnesiumPct' && measured < 17)
+    ) {
+      return 'Raise moderately';
+    }
+    return 'Raise moderately';
+  }
+
+  return 'Hold / maintenance only';
 }
 
 function monthGridDays(monthCursor: Date): Date[] {
@@ -357,7 +474,7 @@ function App() {
     void controller.loadInitialAssessments();
     if (loggedInRole) controller.setRole(loggedInRole);
     return unsub;
-  }, [controller]);
+  }, [controller, loggedInRole]);
 
   const canPlan = roleCanPlan(controller.selectedRole);
   const canAdmin = roleCanAdmin(controller.selectedRole);
@@ -367,6 +484,7 @@ function App() {
     'weekly',
     ...(canPlan ? ['calendar' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['taskList' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? ['amendSoilCalc' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['mothersChart' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['twoGalsChart' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['flowerRoomRowChart' as TabKey] : []),
@@ -376,7 +494,13 @@ function App() {
     ...(controller.selectedRole === 'producer' ? ['growingTips' as TabKey] : []),
     ...(controller.selectedRole === 'ceoExecutive' ? ['ceoRequests' as TabKey] : []),
     ...(requestTargets.length > 0 ? ['sendRequest' as TabKey] : []),
-    ...((controller.selectedRole === 'ceo' || controller.selectedRole === 'ceoExecutive' || controller.selectedRole === 'generalManager' || controller.selectedRole === 'flowerSales') ? ['pricing' as TabKey] : []),
+    ...(
+      controller.selectedRole === 'ceoExecutive'
+      || controller.selectedRole === 'ceo'
+      || controller.selectedRole === 'budtenderJoSenior'
+        ? ['pricing' as TabKey]
+        : []
+    ),
   ];
   const currentTab: TabKey = availableTabs.includes(tab) ? tab : 'weekly';
 
@@ -392,6 +516,9 @@ function App() {
         <div className={`topbar-nav ${controller.selectedRole === 'producer' ? 'topbar-nav-producer' : ''}`}>
           {controller.selectedRole === 'producer' ? (
             <>
+              <div className="producer-tab-row producer-tab-row-label">
+                <span className="producer-following-label">Schedule Weekly Tasks</span>
+              </div>
               <div className="producer-tab-row">
                 <button className={currentTab === 'weekly' ? 'active' : ''} onClick={() => setTab('weekly')}>
                   Weekly Tasks
@@ -412,6 +539,12 @@ function App() {
                   onClick={() => setTab('supplies')}
                 >
                   Supplies
+                </button>
+                <button
+                  className={currentTab === 'amendSoilCalc' ? 'active' : ''}
+                  onClick={() => setTab('amendSoilCalc')}
+                >
+                  Amend Soil Calculator
                 </button>
                 {requestTargets.length > 0 ? (
                   <select
@@ -435,9 +568,6 @@ function App() {
                     <button onClick={() => controller.moveOneWeekForward()}>Week →</button>
                   </>
                 ) : null}
-              </div>
-              <div className="producer-tab-row producer-tab-row-label">
-                <span className="producer-following-label">Period the Following</span>
               </div>
               <div className="producer-tab-row">
                 <button
@@ -487,7 +617,11 @@ function App() {
                   Task Details
                 </button>
               ) : null}
-              {(controller.selectedRole === 'ceo' || controller.selectedRole === 'ceoExecutive' || controller.selectedRole === 'generalManager' || controller.selectedRole === 'flowerSales') ? (
+              {(
+                controller.selectedRole === 'ceoExecutive'
+                || controller.selectedRole === 'ceo'
+                || controller.selectedRole === 'budtenderJoSenior'
+              ) ? (
                 <button className={currentTab === 'pricing' ? 'active' : ''} onClick={() => setTab('pricing')}>
                   Pricing
                 </button>
@@ -595,10 +729,17 @@ function App() {
 
       <main className="content">
         {controller.isLoading ? <div className="card">Loading assessments...</div> : null}
-        {!controller.isLoading && currentTab === 'weekly' ? <WeeklyPage controller={controller} /> : null}
+        {!controller.isLoading && currentTab === 'weekly' ? (
+          controller.selectedRole === 'flowerSales'
+            ? <FlowerSalesPage controller={controller} />
+            : <WeeklyPage controller={controller} />
+        ) : null}
         {!controller.isLoading && currentTab === 'calendar' && canPlan ? <CalendarPage controller={controller} /> : null}
         {!controller.isLoading && currentTab === 'taskList' && controller.selectedRole === 'producer' ? (
           <ProducerTwoWeekTaskListPage controller={controller} />
+        ) : null}
+        {!controller.isLoading && currentTab === 'amendSoilCalc' && controller.selectedRole === 'producer' ? (
+          <ProducerAmendSoilCalculatorPage />
         ) : null}
         {!controller.isLoading && currentTab === 'mothersChart' && controller.selectedRole === 'producer' ? (
           <MothersFeedingPruningChartPage controller={controller} />
@@ -1283,7 +1424,6 @@ function TwoMonthTimelineCalendar({
             return (
               <section key={`${keyPrefix}-${iso}`} className={`month-cell ${inCurrentMonth ? '' : 'outside-month'}`}>
                 <h3>{date.getDate()}</h3>
-                {dayEvents.length === 0 ? <p className="muted">No actions</p> : null}
                 {dayEvents.map((event) => (
                   <article key={event.id} className="calendar-item calendar-item-tight">
                     <strong>{event.title}</strong>
@@ -1571,12 +1711,945 @@ function FlowerRoomRowChartPage({ controller }: { controller: AppController }) {
   );
 }
 
+function FlowerSalesPage({ controller }: { controller: AppController }) {
+  const [showEnterInventory, setShowEnterInventory] = useState(false);
+  const [showRecordSale, setShowRecordSale] = useState(false);
+  const [strainName, setStrainName] = useState('');
+  const [weightLbs, setWeightLbs] = useState('1');
+  const [suggestedRetailPrice, setSuggestedRetailPrice] = useState('0');
+  const [soldLotId, setSoldLotId] = useState('');
+  const [soldTo, setSoldTo] = useState('');
+  const [soldPricePerPound, setSoldPricePerPound] = useState('0');
+  const [soldDateIso, setSoldDateIso] = useState(() => new Date().toISOString().slice(0, 10));
+  const [appointmentDateIso, setAppointmentDateIso] = useState(() => new Date().toISOString().slice(0, 10));
+  const [appointmentCustomer, setAppointmentCustomer] = useState('');
+  const [appointmentStrain, setAppointmentStrain] = useState('');
+  const [appointmentWeight, setAppointmentWeight] = useState('');
+  const [appointmentNotes, setAppointmentNotes] = useState('');
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const availableLots = controller.flowerSalesAvailableInventory;
+  const soldLots = controller.flowerSalesSoldLots;
+  const appointments = controller.flowerSalesAppointmentsForView;
+  const appointmentsByDate = appointments.reduce<Record<string, typeof appointments>>((acc, item) => {
+    if (!acc[item.appointmentDateIso]) acc[item.appointmentDateIso] = [];
+    acc[item.appointmentDateIso].push(item);
+    return acc;
+  }, {});
+  const monthDays = monthGridDays(monthCursor);
+
+  return (
+    <div className="grid">
+      <div className="card">
+        <div className="header-row">
+          <h2>Flower Sales Dashboard</h2>
+          <div className="button-row">
+            <button onClick={() => setShowEnterInventory((v) => !v)}>Enter flower available for sale</button>
+            <button onClick={() => setShowRecordSale((v) => !v)}>Flower sold, price sold for</button>
+          </div>
+        </div>
+
+        {showEnterInventory ? (
+          <div className="form-grid">
+            <label>
+              Strain name
+              <input value={strainName} onChange={(e) => setStrainName(e.target.value)} />
+            </label>
+            <label>
+              Weight (lbs)
+              <input
+                type="number"
+                min={0.01}
+                step={0.01}
+                value={weightLbs}
+                onChange={(e) => setWeightLbs(e.target.value)}
+              />
+            </label>
+            <label>
+              Suggested retail price
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={suggestedRetailPrice}
+                onChange={(e) => setSuggestedRetailPrice(e.target.value)}
+              />
+            </label>
+            <button
+              onClick={() => {
+                const ok = controller.addFlowerInventoryLot({
+                  strainName,
+                  weightLbs: Number(weightLbs),
+                  suggestedRetailPrice: Number(suggestedRetailPrice),
+                });
+                if (!ok) {
+                  alert('Enter valid strain name, weight, and suggested retail price.');
+                  return;
+                }
+                setStrainName('');
+                setWeightLbs('1');
+                setSuggestedRetailPrice('0');
+              }}
+            >
+              Save flower bag
+            </button>
+          </div>
+        ) : null}
+
+        {showRecordSale ? (
+          <div className="form-grid">
+            <label>
+              Flower bag / strain
+              <select value={soldLotId} onChange={(e) => setSoldLotId(e.target.value)}>
+                <option value="">Select available bag</option>
+                {availableLots.map((lot) => (
+                  <option key={lot.id} value={lot.id}>
+                    {lot.strainName} - {lot.weightLbs.toFixed(2)} lbs - Suggested ${lot.suggestedRetailPrice.toFixed(2)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Who it was sold to
+              <input value={soldTo} onChange={(e) => setSoldTo(e.target.value)} />
+            </label>
+            <label>
+              Price per pound sold
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={soldPricePerPound}
+                onChange={(e) => setSoldPricePerPound(e.target.value)}
+              />
+            </label>
+            <label>
+              Date sold
+              <input type="date" value={soldDateIso} onChange={(e) => setSoldDateIso(e.target.value)} />
+            </label>
+            <button
+              onClick={() => {
+                const ok = controller.recordFlowerLotSale({
+                  lotId: soldLotId,
+                  soldTo,
+                  soldPricePerPound: Number(soldPricePerPound),
+                  soldDateIso,
+                });
+                if (!ok) {
+                  alert('Select a lot and enter sold to, sold price per pound, and date.');
+                  return;
+                }
+                setSoldLotId('');
+                setSoldTo('');
+                setSoldPricePerPound('0');
+                setSoldDateIso(new Date().toISOString().slice(0, 10));
+              }}
+            >
+              Record sale
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="card">
+        <h2>Running Inventory</h2>
+        <p className="muted">Available flower bags for sale</p>
+        {availableLots.length === 0 ? <p className="muted">No available flower inventory.</p> : null}
+        <div className="calendar-list">
+          {availableLots.map((lot) => (
+            <article key={lot.id} className="calendar-item">
+              <strong>{lot.strainName}</strong>
+              <span>Weight: {lot.weightLbs.toFixed(2)} lbs</span>
+              <span>Suggested retail price: ${lot.suggestedRetailPrice.toFixed(2)}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Sold Flower Log</h2>
+        {soldLots.length === 0 ? <p className="muted">No sold flower lots recorded yet.</p> : null}
+        <div className="calendar-list">
+          {soldLots.map((lot) => (
+            <article key={lot.id} className="calendar-item">
+              <strong>{lot.strainName}</strong>
+              <span>Weight: {lot.weightLbs.toFixed(2)} lbs</span>
+              <span>Sold to: {lot.soldTo ?? 'N/A'}</span>
+              <span>Price per pound sold: ${lot.soldPricePerPound?.toFixed(2) ?? '0.00'}</span>
+              <span>Date sold: {lot.soldDateIso ?? 'N/A'}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Flower Sales Delivery Appointments</h2>
+        <div className="form-grid">
+          <label>
+            Appointment date
+            <input type="date" value={appointmentDateIso} onChange={(e) => setAppointmentDateIso(e.target.value)} />
+          </label>
+          <label>
+            Sold to / customer
+            <input value={appointmentCustomer} onChange={(e) => setAppointmentCustomer(e.target.value)} />
+          </label>
+          <label>
+            Strain name
+            <input value={appointmentStrain} onChange={(e) => setAppointmentStrain(e.target.value)} />
+          </label>
+          <label>
+            Weight (lbs)
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              value={appointmentWeight}
+              onChange={(e) => setAppointmentWeight(e.target.value)}
+              placeholder="Optional"
+            />
+          </label>
+          <label>
+            Notes
+            <input value={appointmentNotes} onChange={(e) => setAppointmentNotes(e.target.value)} />
+          </label>
+          <button
+            onClick={() => {
+              const ok = controller.addFlowerSalesAppointment({
+                appointmentDateIso,
+                customerName: appointmentCustomer,
+                notes: appointmentNotes,
+                strainName: appointmentStrain,
+                weightLbs: appointmentWeight ? Number(appointmentWeight) : null,
+              });
+              if (!ok) {
+                alert('Enter appointment date and customer.');
+                return;
+              }
+              setAppointmentCustomer('');
+              setAppointmentStrain('');
+              setAppointmentWeight('');
+              setAppointmentNotes('');
+            }}
+          >
+            Add appointment
+          </button>
+        </div>
+        <div className="month-nav">
+          <h3>
+            {monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+          </h3>
+          <div className="button-row">
+            <button onClick={() => setMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>
+              Previous Month
+            </button>
+            <button onClick={() => setMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>
+              Next Month
+            </button>
+          </div>
+        </div>
+        <div className="month-grid">
+          {UI.dayLabels.map((label) => (
+            <div key={`flower-sales-head-${label}`} className="month-head">{label}</div>
+          ))}
+          {monthDays.map((date) => {
+            const iso = toIso(date);
+            const dayAppointments = appointmentsByDate[iso] ?? [];
+            const inCurrentMonth = date.getMonth() === monthCursor.getMonth();
+            return (
+              <section key={`flower-sales-${iso}`} className={`month-cell ${inCurrentMonth ? '' : 'outside-month'}`}>
+                <h3>{date.getDate()}</h3>
+                {dayAppointments.map((appt) => (
+                  <article key={appt.id} className="calendar-item calendar-item-tight">
+                    <strong>{appt.customerName}</strong>
+                    <span>{appt.strainName || 'Flower delivery'}</span>
+                    {appt.weightLbs ? <span>{appt.weightLbs.toFixed(2)} lbs</span> : null}
+                  </article>
+                ))}
+              </section>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProducerAmendSoilCalculatorPage() {
+  const defaultTargets = soilMetricTemplates.map((metric) => ({
+    ...metric,
+  }));
+  const emptyRowValues = flowerRowOrder.reduce<Record<number, Record<string, string>>>((acc, row) => {
+    acc[row] = soilMetricTemplates.reduce<Record<string, string>>((metricAcc, metric) => {
+      metricAcc[metric.key] = '';
+      return metricAcc;
+    }, {});
+    return acc;
+  }, {});
+  const [targets, setTargets] = useState(defaultTargets);
+  const [rowValues, setRowValues] = useState<Record<number, Record<string, string>>>(emptyRowValues);
+  const [parsedAmendmentsByRow, setParsedAmendmentsByRow] = useState<Record<number, Array<{ amendment: string; pounds: number }>>>({
+    1: [
+      { amendment: 'Soft rock phosphate', pounds: 3.2 },
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.4 },
+      { amendment: 'Gypsum', pounds: 4.0 },
+      { amendment: 'Dolomite lime', pounds: 1.8 },
+      { amendment: 'Manganese sulfate', pounds: 0.15 },
+      { amendment: 'Iron sulfate', pounds: 0.12 },
+      { amendment: 'Solubor – Boron', pounds: 0.02 },
+    ],
+    2: [
+      { amendment: 'Soft rock phosphate', pounds: 3.5 },
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.2 },
+      { amendment: 'Gypsum', pounds: 3.5 },
+      { amendment: 'Dolomite lime', pounds: 2.0 },
+      { amendment: 'Manganese sulfate', pounds: 0.16 },
+      { amendment: 'Iron sulfate', pounds: 0.13 },
+      { amendment: 'Solubor – Boron', pounds: 0.02 },
+    ],
+    3: [
+      { amendment: 'Soft rock phosphate', pounds: 4.1 },
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.3 },
+      { amendment: 'Gypsum', pounds: 4.2 },
+      { amendment: 'Dolomite lime', pounds: 2.1 },
+      { amendment: 'Manganese sulfate', pounds: 0.15 },
+      { amendment: 'Iron sulfate', pounds: 0.13 },
+      { amendment: 'Solubor – Boron', pounds: 0.02 },
+    ],
+    5: [
+      { amendment: 'Soft rock phosphate', pounds: 3.1 },
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.2 },
+      { amendment: 'Gypsum', pounds: 5.0 },
+      { amendment: 'Dolomite lime', pounds: 3.2 },
+      { amendment: 'Manganese sulfate', pounds: 0.15 },
+      { amendment: 'Iron sulfate', pounds: 0.05 },
+      { amendment: 'Solubor – Boron', pounds: 0.02 },
+    ],
+    6: [
+      { amendment: 'Soft rock phosphate', pounds: 3.3 },
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.6 },
+      { amendment: 'Gypsum', pounds: 5.0 },
+      { amendment: 'Dolomite lime', pounds: 4.0 },
+      { amendment: 'Manganese sulfate', pounds: 0.15 },
+      { amendment: 'Iron sulfate', pounds: 0.06 },
+    ],
+    7: [
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 2.0 },
+      { amendment: 'Gypsum', pounds: 6.0 },
+      { amendment: 'Dolomite lime', pounds: 6.5 },
+      { amendment: 'Manganese sulfate', pounds: 0.14 },
+      { amendment: 'Iron sulfate', pounds: 0.09 },
+      { amendment: 'Solubor – Boron', pounds: 0.02 },
+    ],
+    8: [
+      { amendment: 'Soft rock phosphate', pounds: 2.0 },
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.5 },
+      { amendment: 'Gypsum', pounds: 5.5 },
+      { amendment: 'Dolomite lime', pounds: 5.0 },
+      { amendment: 'Manganese sulfate', pounds: 0.15 },
+      { amendment: 'Iron sulfate', pounds: 0.06 },
+      { amendment: 'Solubor – Boron', pounds: 0.02 },
+    ],
+    9: [
+      { amendment: 'Soft rock phosphate', pounds: 2.2 },
+      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.8 },
+      { amendment: 'Gypsum', pounds: 6.5 },
+      { amendment: 'Dolomite lime', pounds: 6.0 },
+      { amendment: 'Manganese sulfate', pounds: 0.14 },
+      { amendment: 'Solubor – Boron', pounds: 0.02 },
+    ],
+  });
+  const [importStatus, setImportStatus] = useState('');
+  const [filePickerKey, setFilePickerKey] = useState(0);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(producerAmendSoilStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        targets?: Array<Partial<SoilMetricTemplate> & { key: string }>;
+        rowValues?: Record<string, Record<string, string>>;
+      };
+      if (Array.isArray(parsed.targets)) {
+        setTargets((current) =>
+          current.map((metric) => {
+            const stored = parsed.targets?.find((item) => item.key === metric.key);
+            if (!stored) return metric;
+            return {
+              ...metric,
+              targetValue: Number.isFinite(Number(stored.targetValue)) ? Number(stored.targetValue) : metric.targetValue,
+              potencyPerLbPerRow:
+                Number.isFinite(Number(stored.potencyPerLbPerRow)) ? Number(stored.potencyPerLbPerRow) : metric.potencyPerLbPerRow,
+              amendmentName: stored.amendmentName ? String(stored.amendmentName) : metric.amendmentName,
+            };
+          }),
+        );
+      }
+      if (parsed.rowValues && typeof parsed.rowValues === 'object') {
+        setRowValues((current) => {
+          const next = { ...current };
+          for (const row of flowerRowOrder) {
+            const source = parsed.rowValues?.[String(row)];
+            if (!source || typeof source !== 'object') continue;
+            next[row] = {
+              ...next[row],
+              ...source,
+            };
+          }
+          return next;
+        });
+      }
+    } catch {
+      // ignore invalid local calculator state
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      producerAmendSoilStorageKey,
+      JSON.stringify({
+        targets,
+        rowValues,
+      }),
+    );
+  }, [targets, rowValues]);
+
+  const parseLoganLabsText = (text: string) => {
+    const normalizedText = text.replace(/\u00a0/g, ' ');
+    const metricMappings: Array<{ key: string; regex: RegExp }> = [
+      { key: 'ph', regex: /pH\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?5\.7-6\.4/gs },
+      { key: 'cec', regex: /Exchange\s+Capacity\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?20-50/gs },
+      { key: 'om', regex: /Organic\s+Matter\s+([0-9.>%]+).*?([0-9.>%]+).*?([0-9.>%]+).*?10-15/gs },
+      { key: 'phosphorous', regex: /Phosphorous\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?800-1200/gs },
+      { key: 'sulfur', regex: /Sulfur\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?150-250/gs },
+      { key: 'iron', regex: /Iron\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?225-265/gs },
+      { key: 'manganese', regex: /Manganese\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?45-65/gs },
+      { key: 'zinc', regex: /Zinc\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?20-30/gs },
+      { key: 'copper', regex: /Copper\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?5-9/gs },
+      { key: 'boron', regex: /Boron\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?3-6/gs },
+      { key: 'aluminum', regex: /Aluminum\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?<2000/gs },
+    ];
+    const groupedRows: Array<[number, number, number]> = [
+      [1, 2, 3],
+      [5, 6, 7],
+      [8, 9, 0],
+    ];
+    const updates: Record<number, Record<string, string>> = {};
+    for (const mapping of metricMappings) {
+      const matches = Array.from(normalizedText.matchAll(mapping.regex));
+      matches.slice(0, 3).forEach((match, idx) => {
+        const rows = groupedRows[idx];
+        if (!rows) return;
+        const values = [match[1], match[2], match[3]];
+        rows.forEach((row, valueIndex) => {
+          if (row === 0) return;
+          if (!updates[row]) updates[row] = {};
+          updates[row][mapping.key] = values[valueIndex] ? String(values[valueIndex]).replace(/[>%]/g, '') : '';
+        });
+      });
+    }
+
+    const percentageMappings: Array<{ key: string; regex: RegExp }> = [
+      {
+        key: 'potassiumPct',
+        regex: /Potassium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?5-7%/gs,
+      },
+      {
+        key: 'calciumPct',
+        regex: /Calcium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?68-72%/gs,
+      },
+      {
+        key: 'magnesiumPct',
+        regex: /Magnesium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?17-21%/gs,
+      },
+      {
+        key: 'sodiumPct',
+        regex: /Sodium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?<3%/gs,
+      },
+    ];
+    for (const mapping of percentageMappings) {
+      const matches = Array.from(normalizedText.matchAll(mapping.regex));
+      matches.slice(0, 3).forEach((match, idx) => {
+        const rows = groupedRows[idx];
+        if (!rows) return;
+        const values = [match[1], match[2], match[3]];
+        rows.forEach((row, valueIndex) => {
+          if (row === 0) return;
+          if (!updates[row]) updates[row] = {};
+          updates[row][mapping.key] = values[valueIndex] ?? '';
+        });
+      });
+    }
+    if (Object.keys(updates).length > 0) {
+      setRowValues((current) => {
+        const next = { ...current };
+        for (const [rowStr, values] of Object.entries(updates)) {
+          const row = Number(rowStr);
+          next[row] = {
+            ...(next[row] ?? {}),
+            ...values,
+          };
+        }
+        return next;
+      });
+    }
+  };
+
+  const handleImportFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const statusParts: string[] = [];
+    for (const file of Array.from(files)) {
+      const name = file.name.toLowerCase();
+      try {
+        if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+          const buffer = await file.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: 'array' });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json<Array<string | number | null>>(sheet, { header: 1 });
+          const headerRowIndex = rows.findIndex((row) => Array.isArray(row) && String(row[0] ?? '').trim().toLowerCase() === 'row');
+          if (headerRowIndex >= 0) {
+            const header = rows[headerRowIndex] ?? [];
+            const dataRows = rows.slice(headerRowIndex + 1);
+            const parsed: Record<number, Array<{ amendment: string; pounds: number }>> = {};
+            for (const row of dataRows) {
+              const rowLabel = String(row[0] ?? '').trim().toLowerCase();
+              const rowMatch = /row\s*([1-9])/.exec(rowLabel);
+              if (!rowMatch) continue;
+              const rowNumber = Number(rowMatch[1]);
+              const additions: Array<{ amendment: string; pounds: number }> = [];
+              for (let col = 1; col < header.length; col += 1) {
+                const amendment = String(header[col] ?? '').trim();
+                const pounds = Number(row[col] ?? 0);
+                if (!amendment || !Number.isFinite(pounds) || pounds <= 0) continue;
+                additions.push({ amendment, pounds });
+              }
+              parsed[rowNumber] = additions;
+            }
+            setParsedAmendmentsByRow(parsed);
+            statusParts.push(`Parsed amendment rates from ${file.name}`);
+          }
+        } else if (name.endsWith('.pdf')) {
+          const pdfjs = await import('pdfjs-dist');
+          const workerVersion = (pdfjs as { version?: string }).version ?? '4.10.38';
+          (pdfjs as { GlobalWorkerOptions: { workerSrc: string } }).GlobalWorkerOptions.workerSrc =
+            `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/pdf.worker.min.mjs`;
+          const buffer = await file.arrayBuffer();
+          const loadingTask = (pdfjs as { getDocument: (data: { data: Uint8Array }) => { promise: Promise<{ numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: Array<{ str: string }> }> }> }> } }).getDocument({ data: new Uint8Array(buffer) });
+          const doc = await loadingTask.promise;
+          let text = '';
+          for (let p = 1; p <= doc.numPages; p += 1) {
+            const page = await doc.getPage(p);
+            const content = await page.getTextContent();
+            text += ` ${content.items.map((item) => item.str).join(' ')}`;
+          }
+          parseLoganLabsText(text);
+          statusParts.push(`Parsed Logan Labs PDF metrics from ${file.name}`);
+        } else if (name.endsWith('.eml') || name.endsWith('.txt')) {
+          const text = await file.text();
+          parseLoganLabsText(text);
+          statusParts.push(`Parsed text metrics from ${file.name}`);
+        } else {
+          statusParts.push(`Skipped unsupported file: ${file.name}`);
+        }
+      } catch {
+        statusParts.push(`Could not parse ${file.name}`);
+      }
+    }
+    setImportStatus(statusParts.join(' • '));
+  };
+
+  const recommendationsByRow = flowerRowOrder.map((row) => {
+    const rowEntry = rowValues[row] ?? {};
+    const recommendations = targets
+      .map((metric) => {
+        const parsed = parseSoilNumber(rowEntry[metric.key] ?? '');
+        if (parsed === null) return null;
+        const current = parsed;
+        const needClass = classifySoilNeed(metric, current);
+        const deficit = Math.max(0, metric.targetValue - current);
+        if (needClass === 'Hold / maintenance only' || needClass === 'Stop adding / avoid') {
+          return {
+            key: metric.key,
+            label: metric.label,
+            unit: metric.unit,
+            measured: current,
+            delta: metric.targetValue - current,
+            needClass,
+            deficit,
+            amendmentName: metric.amendmentName,
+            poundsNeeded: 0,
+            poundsPerBed: 0,
+            gramsPerRow: 0,
+            gramsPerBed: 0,
+          };
+        }
+        if (deficit <= 0) return null;
+        const potency = metric.potencyPerLbPerRow > 0 ? metric.potencyPerLbPerRow : 0;
+        const classMultiplier = needClass === 'Raise aggressively' ? 1.25 : 1;
+        const poundsNeeded = potency > 0 ? (deficit / potency) * classMultiplier : 0;
+        const poundsPerBed = poundsNeeded / 5.5;
+        const gramsPerRow = poundsNeeded * 453.592;
+        const gramsPerBed = poundsPerBed * 453.592;
+        return {
+          key: metric.key,
+          label: metric.label,
+          unit: metric.unit,
+          measured: current,
+          delta: metric.targetValue - current,
+          needClass,
+          deficit,
+          amendmentName: metric.amendmentName,
+          poundsNeeded,
+          poundsPerBed,
+          gramsPerRow,
+          gramsPerBed,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    return { row, recommendations };
+  });
+
+  const normalizedRows = flowerRowOrder.map((row) => {
+    const rowEntry = rowValues[row] ?? {};
+    const normalized = targets.map((metric) => {
+      const measured = parseSoilNumber(rowEntry[metric.key] ?? '');
+      return {
+        key: metric.key,
+        label: metric.label,
+        measured,
+        unit: metric.unit,
+        group: metric.normalizedGroup,
+      };
+    });
+    return { row, normalized };
+  });
+
+  const bulkIngredientSection = producerResourceSections.find((section) => section.id === 'bulk-ingredients');
+  const soilAmendmentSection = producerResourceSections.find((section) => section.id === 'soil-amendments');
+
+  const normalizeMaterialName = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const importedTotalsByAmendment = Object.values(parsedAmendmentsByRow).reduce<Record<string, number>>(
+    (acc, rowEntries) => {
+      for (const entry of rowEntries) {
+        const key = normalizeMaterialName(entry.amendment);
+        acc[key] = (acc[key] ?? 0) + entry.pounds;
+      }
+      return acc;
+    },
+    {},
+  );
+
+  const calculatedTotalsByAmendment = recommendationsByRow.reduce<Record<string, number>>((acc, row) => {
+    for (const item of row.recommendations) {
+      const key = normalizeMaterialName(item.amendmentName);
+      acc[key] = (acc[key] ?? 0) + item.poundsNeeded;
+    }
+    return acc;
+  }, {});
+
+  const estimatePoundsForMaterial = (label: string): number => {
+    const normalized = normalizeMaterialName(label);
+    const imported = Object.entries(importedTotalsByAmendment).reduce((sum, [key, value]) => {
+      if (key.includes(normalized) || normalized.includes(key)) return sum + value;
+      return sum;
+    }, 0);
+    const calculated = Object.entries(calculatedTotalsByAmendment).reduce((sum, [key, value]) => {
+      if (key.includes(normalized) || normalized.includes(key)) return sum + value;
+      return sum;
+    }, 0);
+    return imported + calculated;
+  };
+
+  return (
+    <div className="grid">
+      <div className="card">
+        <h2>Amend Soil Calculator</h2>
+        <p className="muted">
+          Baseline targets are derived from your Logan Labs report target ranges (12/18/25). Upload Logan Labs PDFs and amendment sheets to auto-fill rows.
+        </p>
+        <div className="form-grid">
+          <div className="button-row">
+            <input
+              key={`soil-upload-${filePickerKey}`}
+              id="soil-upload-file-picker"
+              type="file"
+              multiple
+              accept=".pdf,.xlsx,.xls,.eml,.txt,.doc,.docx"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                void handleImportFiles(e.target.files);
+                setFilePickerKey((k) => k + 1);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const picker = document.getElementById('soil-upload-file-picker') as HTMLInputElement | null;
+                picker?.click();
+              }}
+            >
+              Upload file
+            </button>
+            <span className="muted">Accepts PDF, email text, XLS/XLSX, DOC/DOCX, and TXT.</span>
+          </div>
+          {importStatus ? <p className="muted">{importStatus}</p> : null}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Layer 1: Target Spec (Fixed Baseline)</h2>
+        <p className="muted">Recommended baseline used for future soil tests.</p>
+        <div className="amend-grid-head amend-grid-row">
+          <span>Analyte</span>
+          <span>Target</span>
+          <span>Range</span>
+          <span>Units</span>
+        </div>
+        {soilMetricTemplates.map((metric) => (
+          <div key={`baseline-${metric.key}`} className="amend-grid-row">
+            <span>{metric.label}</span>
+            <span>{metric.targetValue}</span>
+            <span>{metric.targetMin} - {metric.targetMax}</span>
+            <span>{metric.unit}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="card">
+        <h2>Working Target Overrides</h2>
+        <p className="muted">
+          Optional: adjust target values and amendment potency for custom scenarios.
+        </p>
+        <div className="button-row">
+          <button type="button" onClick={() => setTargets(soilMetricTemplates.map((item) => ({ ...item })))}>
+            Reset to recommended baseline
+          </button>
+        </div>
+        <div className="amend-grid-head amend-grid-row">
+          <span>Soil Component</span>
+          <span>Target</span>
+          <span>Amendment</span>
+          <span>Potency (ppm per lb per row)</span>
+        </div>
+        {targets.map((metric) => (
+          <div key={`target-${metric.key}`} className="amend-grid-row">
+            <span>{metric.label}</span>
+            <input
+              type="number"
+              step={0.01}
+              value={metric.targetValue}
+              onChange={(e) =>
+                setTargets((current) =>
+                  current.map((item) =>
+                    item.key === metric.key
+                      ? { ...item, targetValue: Number(e.target.value) }
+                      : item,
+                  ),
+                )
+              }
+            />
+            <input
+              value={metric.amendmentName}
+              onChange={(e) =>
+                setTargets((current) =>
+                  current.map((item) =>
+                    item.key === metric.key
+                      ? { ...item, amendmentName: e.target.value }
+                      : item,
+                  ),
+                )
+              }
+            />
+            <input
+              type="number"
+              step={0.01}
+              min={0}
+              value={metric.potencyPerLbPerRow}
+              onChange={(e) =>
+                setTargets((current) =>
+                  current.map((item) =>
+                    item.key === metric.key
+                      ? { ...item, potencyPerLbPerRow: Number(e.target.value) }
+                      : item,
+                  ),
+                )
+              }
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="card">
+        <h2>Logan Labs Input By Row (Rows 9-1)</h2>
+        <div className="calendar-list">
+          {flowerRowOrder.map((row) => (
+            <article key={`row-input-${row}`} className="calendar-item">
+              <strong>Row {row} soil profile</strong>
+              <div className="amend-row-input-grid">
+                {targets.map((metric) => (
+                  <label key={`row-${row}-${metric.key}`}>
+                    {metric.label} ({metric.unit})
+                    <input
+                      type="number"
+                      step={0.01}
+                      value={rowValues[row]?.[metric.key] ?? ''}
+                      onChange={(e) =>
+                        setRowValues((current) => ({
+                          ...current,
+                          [row]: {
+                            ...(current[row] ?? {}),
+                            [metric.key]: e.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Layer 2: Incoming Lab Normalization</h2>
+        <p className="muted">
+          Normalized fields: pH / CEC / OM, base saturation (%), and ppm-style analytes for row-by-row comparison.
+        </p>
+        <div className="calendar-list">
+          {normalizedRows.map((row) => (
+            <article key={`norm-${row.row}`} className="calendar-item">
+              <strong>Row {row.row}</strong>
+              {row.normalized.map((item) => (
+                <span key={`norm-${row.row}-${item.key}`}>
+                  {item.label}: {item.measured === null ? '—' : item.measured.toFixed(2)} {item.unit}
+                </span>
+              ))}
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Layer 3: Delta-To-Target + Recommendation Class</h2>
+        <p className="muted">
+          For each component below target, suggested pounds are calculated as: <code>deficit / potency</code>. Conversion: 1 row = 5.5 beds, 1 lb = 453.592 grams.
+        </p>
+        <div className="calendar-list">
+          {recommendationsByRow.map((rowResult) => (
+            <article key={`recommend-${rowResult.row}`} className="calendar-item">
+              <strong>Row {rowResult.row}</strong>
+              {rowResult.recommendations.length === 0 ? (
+                <span>All entered metrics are at or above target.</span>
+              ) : (
+                rowResult.recommendations.map((item) => (
+                  <span key={`row-${rowResult.row}-${item.key}`}>
+                    {item.label}: measured {item.measured.toFixed(2)} {item.unit}, delta {item.delta.toFixed(2)} ({item.needClass}).
+                    {item.poundsNeeded > 0
+                      ? ` Add ${item.poundsNeeded.toFixed(2)} lb (${item.gramsPerRow.toFixed(0)} g) of ${item.amendmentName} per row, or ${item.poundsPerBed.toFixed(2)} lb (${item.gramsPerBed.toFixed(0)} g) per bed.`
+                      : ' No addition recommended.'}
+                  </span>
+                ))
+              )}
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Imported Amendment Plan (From XLSX)</h2>
+        <p className="muted">
+          Uses uploaded amendment-per-row sheet. Values shown in lb and grams for row and per bed.
+        </p>
+        <div className="calendar-list">
+          {flowerRowOrder.map((row) => {
+            const entries = parsedAmendmentsByRow[row] ?? [];
+            return (
+              <article key={`imported-plan-${row}`} className="calendar-item">
+                <strong>Row {row}</strong>
+                {entries.length === 0 ? (
+                  <span>No imported amendments for this row.</span>
+                ) : (
+                  entries.map((entry, idx) => {
+                    const poundsPerBed = entry.pounds / 5.5;
+                    return (
+                      <span key={`imported-${row}-${idx}`}>
+                        {entry.amendment}: {entry.pounds.toFixed(2)} lb ({(entry.pounds * 453.592).toFixed(0)} g) per row,
+                        {` ${poundsPerBed.toFixed(2)} lb (${(poundsPerBed * 453.592).toFixed(0)} g) per bed`}
+                      </span>
+                    );
+                  })
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Program Interpretation Summary</h2>
+        <p className="muted">
+          High-priority targets: CEC, Ca saturation, P, K saturation, Mn, Cu, B, Fe.
+          Do not oversupply: Mg, S, Zn, OM.
+        </p>
+        <div className="calendar-list">
+          <article className="calendar-item">
+            <strong>Raise aggressively when far under:</strong>
+            <span>Phosphorus, Ca saturation, K saturation, Mn, Cu, B, Fe (&lt;225), CEC (&lt;20).</span>
+          </article>
+          <article className="calendar-item">
+            <strong>Raise moderately when slightly under:</strong>
+            <span>pH &lt;5.7, Sulfur &lt;150 ppm, Mg saturation &lt;17%.</span>
+          </article>
+          <article className="calendar-item">
+            <strong>Stop/avoid when over target:</strong>
+            <span>Sulfur &gt;250, Zinc &gt;30, Phosphorus &gt;1200, Mg &gt;21%, Sodium approaching 3%, pH &gt;6.4.</span>
+          </article>
+        </div>
+      </div>
+
+      <div className="card">
+        <h2>Complete Materials Needed</h2>
+        <p className="muted">
+          Combined from Soil Shopping List: Soil Amendments + Bulk Ingredients.
+        </p>
+
+        <h3>Soil Amendments</h3>
+        <div className="calendar-list">
+          {(soilAmendmentSection?.items ?? []).map((item) => {
+            const pounds = estimatePoundsForMaterial(item.label);
+            return (
+              <article key={`amend-list-${item.id}`} className="calendar-item">
+                <strong>{item.label}</strong>
+                <span>{pounds > 0 ? `Estimated total: ${pounds.toFixed(2)} lb (${(pounds * 453.592).toFixed(0)} g)` : 'Estimated total: TBD from uploads / manual inputs'}</span>
+              </article>
+            );
+          })}
+        </div>
+
+        <h3>Bulk Ingredients</h3>
+        <div className="calendar-list">
+          {(bulkIngredientSection?.items ?? []).map((item) => (
+            <article key={`bulk-list-${item.id}`} className="calendar-item">
+              <strong>{item.label}</strong>
+              <span>Include in full soil build inventory planning.</span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WeeklyPage({ controller }: { controller: AppController }) {
   const [showAll, setShowAll] = useState(false);
   const [minimizeAllRooms, setMinimizeAllRooms] = useState(false);
   const [collapsedRooms, setCollapsedRooms] = useState<Record<string, boolean>>({});
   const [plannerTab, setPlannerTab] = useState<'room' | 'random'>('room');
-  const [producerQuestionIndex, setProducerQuestionIndex] = useState(0);
   const [draftByTemplateId, setDraftByTemplateId] = useState<Record<string, DraftPlan>>({});
   const [transferQuestionByTemplateId, setTransferQuestionByTemplateId] = useState<Record<string, TransferQuestionDraft>>({});
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -1590,6 +2663,8 @@ function WeeklyPage({ controller }: { controller: AppController }) {
   const [customRandomTaskDay, setCustomRandomTaskDay] = useState(0);
   const [showDailyChecklist, setShowDailyChecklist] = useState(false);
   const [dailyChecklistDateIso, setDailyChecklistDateIso] = useState(() => new Date().toISOString().slice(0, 10));
+  const [draggingScheduledTask, setDraggingScheduledTask] = useState<{ taskId: string } | null>(null);
+  const [dragTarget, setDragTarget] = useState<{ scheduleWindow: 'thisWeek' | 'nextWeek'; dayIndex: number } | null>(null);
 
   const rawByRoom = controller.templatesByRoomForActiveTrack();
   const editingTask = editingTaskId
@@ -1599,18 +2674,38 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     ? controller.templateForScheduledTaskId(editingTaskId)
     : undefined;
   const notNeeded = controller.notNeededThisWeekByTrack[controller.activeTrack];
-  const showAllInPlanner = controller.selectedRole === 'producer' ? false : showAll;
+  const showAllInPlanner = controller.selectedRole === 'producer' ? true : showAll;
 
   const isScheduled = (templateId: string) =>
     Boolean(controller.findThisWeekRequest(templateId) || controller.findExplicitNextWeekTask(templateId));
 
+  const revolvingTemplateIds = new Set<string>(
+    controller.selectedRole === 'producer'
+      ? Object.values(rawByRoom)
+          .flat()
+          .filter((template) => template.taskRecurrenceMode !== 'none')
+          .map((template) => template.id)
+      : [],
+  );
+
   const byRoom: Record<string, AssessmentTemplate[]> = {};
   for (const [room, templates] of Object.entries(rawByRoom)) {
     const filtered = templates.filter((template) => {
+      if (controller.selectedRole === 'producer' && revolvingTemplateIds.has(template.id)) {
+        return false;
+      }
       if (showAllInPlanner) return true;
       return !isScheduled(template.id) && !notNeeded.has(template.id);
     });
     if (filtered.length > 0 || showAllInPlanner) byRoom[room] = filtered;
+  }
+  if (controller.selectedRole === 'producer' && revolvingTemplateIds.size > 0) {
+    const revolvingTemplates = Object.values(rawByRoom)
+      .flat()
+      .filter((template) => revolvingTemplateIds.has(template.id));
+    if (revolvingTemplates.length > 0) {
+      byRoom['Revolving Tasks'] = revolvingTemplates;
+    }
   }
 
   const producerQuestionnaireEntries =
@@ -1627,19 +2722,13 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     controller.selectedRole === 'producer'
       ? producerQuestionnaireEntries.length
       : 0;
-  const producerQuestionMaxIndex = Math.max(0, producerQuestionnaireTotal - 1);
-  const producerQuestionCurrentIndex = Math.max(
-    0,
-    Math.min(producerQuestionIndex, producerQuestionMaxIndex),
-  );
-  const producerQuestionnaireCurrent =
+  const producerQuestionIndexByTemplateId =
     controller.selectedRole === 'producer'
-      ? producerQuestionnaireEntries[producerQuestionCurrentIndex] ?? null
-      : null;
-  const producerQuestionnaireReviewed =
-    controller.selectedRole === 'producer'
-      ? producerQuestionCurrentIndex
-      : 0;
+      ? producerQuestionnaireEntries.reduce<Record<string, number>>((acc, entry, index) => {
+          acc[entry.template.id] = index + 1;
+          return acc;
+        }, {})
+      : {};
 
   const getDraft = (template: AssessmentTemplate): DraftPlan => {
     const existing = draftByTemplateId[template.id];
@@ -1670,8 +2759,6 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     };
   };
 
-  const producerQuestionTemplate = producerQuestionnaireCurrent?.template ?? null;
-  const producerQuestionDraft = producerQuestionTemplate ? getDraft(producerQuestionTemplate) : null;
   const getTransferQuestionDraft = (
     template: AssessmentTemplate,
     baseDraft: DraftPlan,
@@ -1701,51 +2788,6 @@ function WeeklyPage({ controller }: { controller: AppController }) {
       };
     });
   };
-
-  const moveProducerQuestion = (delta: number) => {
-    setProducerQuestionIndex((current) => {
-      const next = current + delta;
-      if (next < 0) return 0;
-      if (next > producerQuestionMaxIndex) return producerQuestionMaxIndex;
-      return next;
-    });
-  };
-
-  const jumpToProducerQuestion = (questionNumberOneBased: number) => {
-    if (producerQuestionnaireTotal <= 0) {
-      setProducerQuestionIndex(0);
-      return;
-    }
-    const targetIndex = questionNumberOneBased - 1;
-    if (targetIndex < 0) {
-      setProducerQuestionIndex(0);
-      return;
-    }
-    if (targetIndex > producerQuestionMaxIndex) {
-      setProducerQuestionIndex(producerQuestionMaxIndex);
-      return;
-    }
-    setProducerQuestionIndex(targetIndex);
-  };
-
-  const producerRequiresRowSelection = Boolean(
-    producerQuestionTemplate
-    && controller.templateRequiresFlowerRowSelection(producerQuestionTemplate),
-  );
-  const producerTransferDraft =
-    producerQuestionTemplate && producerQuestionDraft && producerRequiresRowSelection
-      ? getTransferQuestionDraft(producerQuestionTemplate, producerQuestionDraft)
-      : null;
-  const producerSelectedTransferRows =
-    producerTransferDraft?.rows
-      .filter((row) => typeof row.rowNumber === 'number')
-      .map((row) => ({
-        rowNumber: row.rowNumber as number,
-        strainName: row.strainName.trim(),
-      }))
-      ?? [];
-  const producerCanScheduleTransfer = !producerRequiresRowSelection
-    || Boolean(producerTransferDraft?.finalized && producerSelectedTransferRows.length > 0);
 
   const openEditTask = (taskId: string) => {
     const task = controller.scheduledTaskById(taskId);
@@ -1875,13 +2917,65 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
 
+  const beginScheduleTaskDrag = (event: DragEvent<HTMLElement>, task: WeekTask) => {
+    if (task.completed && !roleCanAdmin(controller.selectedRole)) return;
+    setDraggingScheduledTask({ taskId: task.id });
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', task.id);
+  };
+
+  const allowScheduleTaskDrop = (
+    event: DragEvent<HTMLElement>,
+    scheduleWindow: 'thisWeek' | 'nextWeek',
+    dayIndex: number,
+  ) => {
+    if (!draggingScheduledTask) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    if (dragTarget?.scheduleWindow !== scheduleWindow || dragTarget.dayIndex !== dayIndex) {
+      setDragTarget({ scheduleWindow, dayIndex });
+    }
+  };
+
+  const clearScheduleDragState = () => {
+    setDraggingScheduledTask(null);
+    setDragTarget(null);
+  };
+
+  const dropScheduleTask = (
+    event: DragEvent<HTMLElement>,
+    scheduleWindow: 'thisWeek' | 'nextWeek',
+    dayIndex: number,
+  ) => {
+    if (!draggingScheduledTask) return;
+    event.preventDefault();
+    const task = controller.scheduledTaskById(draggingScheduledTask.taskId);
+    if (!task) {
+      clearScheduleDragState();
+      return;
+    }
+    if (task.completed && !roleCanAdmin(controller.selectedRole)) {
+      clearScheduleDragState();
+      return;
+    }
+    controller.updateScheduledTask(task.id, {
+      title: task.title,
+      room: task.room,
+      preferredDay: dayIndex,
+      estimatedHours: task.estimatedHours,
+      scheduleWindow,
+    });
+    clearScheduleDragState();
+  };
+
   const checklistRoles = controller.dailyChecklistRoles();
   const isBudtenderChecklistRole = checklistRoles.includes(controller.selectedRole);
   const canViewChecklistSummary =
-    controller.selectedRole === 'generalManager'
+    (controller.selectedRole === 'generalManager'
     || controller.selectedRole === 'budtenderJoSenior'
     || controller.selectedRole === 'ceoExecutive'
-    || controller.selectedRole === 'ceo';
+    || controller.selectedRole === 'ceo')
+    && controller.activeTrack !== 'producer';
   const canUseDailyChecklist = isBudtenderChecklistRole || canViewChecklistSummary;
 
   useEffect(() => {
@@ -1977,14 +3071,25 @@ function WeeklyPage({ controller }: { controller: AppController }) {
       {controller.selectedRole !== 'producer' ? (
       <div className="card summary">
         <h2>Task List for the Next Two Weeks</h2>
+        <p className="muted">Drag and drop any task into another day to rearrange the schedule.</p>
         <section className="week-block">
           <h3>This Week <small>{weekRangeLabel(currentWeekStart)}</small></h3>
           <div className="schedule-grid">
             {UI.dayLabels.map((day, index) => {
               const load = controller.dayLoad(index);
               const capClass = load >= 8 ? 'day-over-full' : load >= 7 ? 'day-near-full' : '';
+              const dropActive =
+                dragTarget?.scheduleWindow === 'thisWeek' && dragTarget.dayIndex === index;
               return (
-              <div key={`this-${day}`} className={`day-col ${capClass}`}>
+              <div
+                key={`this-${day}`}
+                className={`day-col ${capClass} ${dropActive ? 'day-col-drop-target' : ''}`}
+                onDragOver={(event) => allowScheduleTaskDrop(event, 'thisWeek', index)}
+                onDragLeave={() => {
+                  if (dropActive) setDragTarget(null);
+                }}
+                onDrop={(event) => dropScheduleTask(event, 'thisWeek', index)}
+              >
                 <div className="day-head">
                   <h4>
                     {day}
@@ -1995,7 +3100,13 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                   </span>
                 </div>
                 {controller.tasksForDay(index).map((task) => (
-                <label key={task.id} className="check-row">
+                <label
+                  key={task.id}
+                  className="check-row"
+                  draggable={!(task.completed && !roleCanAdmin(controller.selectedRole))}
+                  onDragStart={(event) => beginScheduleTaskDrag(event, task)}
+                  onDragEnd={clearScheduleDragState}
+                >
                   <input
                     type="checkbox"
                     checked={task.completed}
@@ -2037,8 +3148,18 @@ function WeeklyPage({ controller }: { controller: AppController }) {
             {UI.dayLabels.map((day, index) => {
               const load = nextWeekDayLoad(index);
               const capClass = load >= 8 ? 'day-over-full' : load >= 7 ? 'day-near-full' : '';
+              const dropActive =
+                dragTarget?.scheduleWindow === 'nextWeek' && dragTarget.dayIndex === index;
               return (
-              <div key={`next-${day}`} className={`day-col ${capClass}`}>
+              <div
+                key={`next-${day}`}
+                className={`day-col ${capClass} ${dropActive ? 'day-col-drop-target' : ''}`}
+                onDragOver={(event) => allowScheduleTaskDrop(event, 'nextWeek', index)}
+                onDragLeave={() => {
+                  if (dropActive) setDragTarget(null);
+                }}
+                onDrop={(event) => dropScheduleTask(event, 'nextWeek', index)}
+              >
                 <div className="day-head">
                   <h4>
                     {day}
@@ -2049,7 +3170,13 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                   </span>
                 </div>
                 {nextWeekTasksForDay(index).map((task) => (
-                  <label key={task.id} className="check-row">
+                  <label
+                    key={task.id}
+                    className="check-row"
+                    draggable={!(task.completed && !roleCanAdmin(controller.selectedRole))}
+                    onDragStart={(event) => beginScheduleTaskDrag(event, task)}
+                    onDragEnd={clearScheduleDragState}
+                  >
                     <input
                       type="checkbox"
                       checked={task.completed}
@@ -2094,43 +3221,6 @@ function WeeklyPage({ controller }: { controller: AppController }) {
       <div className="card">
         <div className="header-row">
           <h2>{plannerTab === 'room' ? 'Task by Room' : 'Create new random task'}</h2>
-          {controller.selectedRole === 'producer' && plannerTab === 'room' ? (
-            <div className="button-row">
-              <button
-                onClick={() => moveProducerQuestion(-1)}
-                disabled={producerQuestionnaireTotal === 0 || producerQuestionCurrentIndex <= 0}
-              >
-                Back Question
-              </button>
-              <button
-                onClick={() => moveProducerQuestion(1)}
-                disabled={producerQuestionnaireTotal === 0 || producerQuestionCurrentIndex >= producerQuestionMaxIndex}
-              >
-                Forward Question
-              </button>
-              <div className="question-jump-control">
-                <label htmlFor="producer-question-jump">Jump to question</label>
-                <input
-                  id="producer-question-jump"
-                  type="range"
-                  min={1}
-                  max={Math.max(1, producerQuestionnaireTotal)}
-                  value={
-                    producerQuestionnaireTotal > 0
-                      ? producerQuestionCurrentIndex + 1
-                      : 1
-                  }
-                  onChange={(e) => jumpToProducerQuestion(Number(e.target.value))}
-                  disabled={producerQuestionnaireTotal <= 1}
-                />
-                <span className="question-jump-count">
-                  {producerQuestionnaireTotal > 0
-                    ? `${producerQuestionCurrentIndex + 1} / ${producerQuestionnaireTotal}`
-                    : '0 / 0'}
-                </span>
-              </div>
-            </div>
-          ) : null}
           {controller.selectedRole === 'producer' ? (
             <div className="button-row">
               <button
@@ -2241,260 +3331,335 @@ function WeeklyPage({ controller }: { controller: AppController }) {
             ) : null}
 
             {controller.selectedRole === 'producer' ? (
-              producerQuestionTemplate && producerQuestionDraft ? (
-                <section className="room-block questionnaire-block">
+              Object.entries(byRoom).map(([room, templates]) => (
+                <section key={room} className="room-block questionnaire-block">
                   <div className="room-head">
                     <h3>
-                      {producerQuestionnaireCurrent?.room}{' '}
-                      <small>
-                        Question {producerQuestionnaireTotal === 0 ? 0 : producerQuestionnaireReviewed + 1} of {producerQuestionnaireTotal}
-                      </small>
+                      {room} <small>{templates.length} questions</small>
                     </h3>
-                    <span className="muted">Category: {producerQuestionnaireCurrent?.category}</span>
                   </div>
-                  <article key={producerQuestionTemplate.id} className="task-card compact questionnaire-card">
-                    <div className="task-main">
-                      <h4>{producerQuestionTemplate.title}</h4>
-                      <p>
-                        Estimated time to complete task:{' '}
-                        {controller.formatHoursLabel(producerQuestionTemplate.defaultHours)}
-                      </p>
-                      <div className="task-controls inline-under-title">
-                        <div className="day-pill-row">
-                          {UI.dayLabels.map((label, idx) => (
-                            <button
-                              key={label}
-                              className={`day-pill ${producerQuestionDraft.day === idx ? 'active-day' : ''}`}
-                              onClick={() =>
-                                setDraftByTemplateId((prev) => ({
-                                  ...prev,
-                                  [producerQuestionTemplate.id]: {
-                                    ...producerQuestionDraft,
-                                    day: idx,
-                                  },
-                                }))
-                              }
-                            >
-                              {label.slice(0, 3)}
-                            </button>
-                          ))}
-                        </div>
-
-                        <label className="hours-field">
-                          Hours
-                          <select
-                            value={producerQuestionDraft.hours}
-                            onChange={(e) =>
-                              setDraftByTemplateId((prev) => ({
-                                ...prev,
-                                [producerQuestionTemplate.id]: {
-                                  ...producerQuestionDraft,
-                                  hours: Number(e.target.value),
-                                },
-                              }))
-                            }
-                          >
-                            {UI.hourStepOptions().map((value) => (
-                              <option key={value} value={value}>
-                                {controller.formatHoursLabel(value)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        {producerRequiresRowSelection && producerTransferDraft ? (
-                          <div className="row-select-field">
-                            <p className="muted">Which row will you be transplanting veg plants into?</p>
-                            {producerTransferDraft.rows.map((rowDraft, rowIndex) => (
-                              <div key={`transfer-row-${producerQuestionTemplate.id}-${rowIndex}`} className="task-action-row edit-window">
-                                <label className="hours-field">
-                                  {rowIndex + 1 === 1 ? 'Row' : `Additional row ${rowIndex + 1}`}
-                                  <select
-                                    value={rowDraft.rowNumber ?? ''}
-                                    onChange={(e) =>
-                                      updateTransferQuestionDraft(producerQuestionTemplate.id, (current) => ({
-                                        ...current,
-                                        rows: current.rows.map((item, idx) =>
-                                          idx === rowIndex
-                                            ? { ...item, rowNumber: e.target.value ? Number(e.target.value) : null }
-                                            : item,
-                                        ),
-                                      }))
-                                    }
-                                  >
-                                    <option value="">Select row</option>
-                                    {Array.from({ length: 9 }, (_, idx) => 9 - idx).map((rowNumber) => (
-                                      <option key={`row-${rowNumber}`} value={rowNumber}>
-                                        Row {rowNumber}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <label className="hours-field">
-                                  Enter strain name
-                                  <input
-                                    placeholder="Type strain name"
-                                    value={rowDraft.strainName}
-                                    onChange={(e) =>
-                                      updateTransferQuestionDraft(producerQuestionTemplate.id, (current) => ({
-                                        ...current,
-                                        rows: current.rows.map((item, idx) =>
-                                          idx === rowIndex ? { ...item, strainName: e.target.value } : item,
-                                        ),
-                                      }))
-                                    }
-                                  />
-                                </label>
-                              </div>
-                            ))}
-                            <div className="button-row">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateTransferQuestionDraft(producerQuestionTemplate.id, (current) => ({
-                                    ...current,
-                                    finalized: false,
-                                    rows:
-                                      current.rows.length >= 9
-                                        ? current.rows
-                                        : [...current.rows, { rowNumber: null, strainName: '' }],
-                                  }))
-                                }
-                                disabled={producerTransferDraft.rows.length >= 9}
-                              >
-                                Transplant another row
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  updateTransferQuestionDraft(producerQuestionTemplate.id, (current) => ({
-                                    ...current,
-                                    finalized: true,
-                                  }))
-                                }
-                              >
-                                No more rows need to be transplanted
-                              </button>
-                            </div>
-                            {producerTransferDraft.finalized ? (
-                              <p className="muted">Rows finalized. Choose a scheduling option below.</p>
-                            ) : (
-                              <p className="muted">Finalize rows before scheduling this task.</p>
-                            )}
-                          </div>
-                        ) : null}
-
-                        <div className="task-action-row">
-                          <button
-                            onClick={() => {
-                              let ok = false;
-                              if (producerRequiresRowSelection && producerTransferDraft) {
-                                if (!producerCanScheduleTransfer) {
-                                  alert('Finalize transplant rows and select at least one row before scheduling.');
-                                  return;
-                                }
-                                const [primaryRow, ...additionalRows] = producerSelectedTransferRows;
-                                if (!primaryRow) {
-                                  alert('Select at least one row before scheduling.');
-                                  return;
-                                }
-                                const draftForPrimary = {
-                                  ...producerQuestionDraft,
-                                  flowerRowNumber: primaryRow.rowNumber,
-                                };
-                                setDraftByTemplateId((prev) => ({
-                                  ...prev,
-                                  [producerQuestionTemplate.id]: draftForPrimary,
-                                }));
-                                controller.removePlan(producerQuestionTemplate.id, false);
-                                controller.removePlan(producerQuestionTemplate.id, true);
-                                ok = scheduleFromDraft(producerQuestionTemplate, draftForPrimary, false);
-                                if (ok && additionalRows.length > 0) {
-                                  controller.planAdditionalTransferRows({
-                                    template: producerQuestionTemplate,
-                                    hours: draftForPrimary.hours,
-                                    preferredDay: draftForPrimary.day,
-                                    forNextWeek: false,
-                                    rows: additionalRows,
-                                  });
-                                }
-                              } else {
-                                ok = scheduleFromDraft(producerQuestionTemplate, producerQuestionDraft, false);
-                              }
-                              if (ok) moveProducerQuestion(1);
-                            }}
-                            disabled={!producerCanScheduleTransfer}
-                          >
-                            Schedule this week
-                          </button>
-                          <button
-                            onClick={() => {
-                              controller.setTemplateNotNeededThisWeek(
-                                producerQuestionTemplate.id,
-                                true,
-                              );
-                              moveProducerQuestion(1);
-                            }}
-                          >
-                            Not needed this week
-                          </button>
-                          <button
-                            onClick={() => {
-                              let ok = false;
-                              if (producerRequiresRowSelection && producerTransferDraft) {
-                                if (!producerCanScheduleTransfer) {
-                                  alert('Finalize transplant rows and select at least one row before scheduling.');
-                                  return;
-                                }
-                                const [primaryRow, ...additionalRows] = producerSelectedTransferRows;
-                                if (!primaryRow) {
-                                  alert('Select at least one row before scheduling.');
-                                  return;
-                                }
-                                const draftForPrimary = {
-                                  ...producerQuestionDraft,
-                                  flowerRowNumber: primaryRow.rowNumber,
-                                };
-                                setDraftByTemplateId((prev) => ({
-                                  ...prev,
-                                  [producerQuestionTemplate.id]: draftForPrimary,
-                                }));
-                                controller.removePlan(producerQuestionTemplate.id, false);
-                                controller.removePlan(producerQuestionTemplate.id, true);
-                                ok = scheduleFromDraft(producerQuestionTemplate, draftForPrimary, true);
-                                if (ok && additionalRows.length > 0) {
-                                  controller.planAdditionalTransferRows({
-                                    template: producerQuestionTemplate,
-                                    hours: draftForPrimary.hours,
-                                    preferredDay: draftForPrimary.day,
-                                    forNextWeek: true,
-                                    rows: additionalRows,
-                                  });
-                                }
-                              } else {
-                                ok = scheduleFromDraft(producerQuestionTemplate, producerQuestionDraft, true);
-                              }
-                              if (ok) moveProducerQuestion(1);
-                            }}
-                            disabled={!producerCanScheduleTransfer}
-                          >
-                            Schedule task next week
-                          </button>
-                        </div>
+                  {templates.length === 0 ? <p className="muted">No tasks in current filter.</p> : null}
+                  {Object.entries(
+                    templates.reduce<Record<string, AssessmentTemplate[]>>((acc, template) => {
+                      const key = categoryDisplayName(template.category);
+                      if (!acc[key]) acc[key] = [];
+                      acc[key].push(template);
+                      return acc;
+                    }, {}),
+                  ).map(([category, categoryTemplates]) => (
+                    <div key={`${room}-${category}`} className="category-block">
+                      <div className="category-head">
+                        <h4>{category}</h4>
+                        <span>{categoryTemplates.length} tasks</span>
                       </div>
-                      {producerQuestionTemplate.autoScheduledTasks.length > 0 ? (
-                        <p className="scheduled-tag">
-                          Auto-schedules {producerQuestionTemplate.autoScheduledTasks.length} related tasks
-                        </p>
-                      ) : null}
+                      <div className="task-list-grid producer-four-col">
+                        {categoryTemplates.map((template) => {
+                          const draft = getDraft(template);
+                          const thisWeek = controller.findThisWeekRequest(template.id);
+                          const nextWeek = controller.findExplicitNextWeekTask(template.id);
+                          const requiresRowSelection = controller.templateRequiresFlowerRowSelection(template);
+                          const isTransferTask = isTransferTaskTitle(template.title);
+                          const transferDraft =
+                            requiresRowSelection && isTransferTask
+                              ? getTransferQuestionDraft(template, draft)
+                              : null;
+                          const selectedTransferRows =
+                            transferDraft?.rows
+                              .filter((row) => typeof row.rowNumber === 'number')
+                              .map((row) => ({
+                                rowNumber: row.rowNumber as number,
+                                strainName: row.strainName.trim(),
+                              }))
+                              ?? [];
+                          const canSchedule =
+                            !requiresRowSelection
+                            || (isTransferTask
+                              ? Boolean(transferDraft?.finalized && selectedTransferRows.length > 0)
+                              : Boolean(draft.flowerRowNumber));
+                          const questionIndex = producerQuestionIndexByTemplateId[template.id] ?? 0;
+                          const rowPrompt = isTransferTask
+                            ? 'Which row will you be transplanting veg plants into?'
+                            : normalized(template.title).includes('harvest')
+                              ? 'Which flower room row are you harvesting?'
+                              : 'Which flower room row are you rototilling and adding amendments to?';
+
+                          return (
+                            <article key={template.id} className="task-card compact questionnaire-card">
+                              <div className="task-main">
+                                <h4>{template.title}</h4>
+                                <p className="muted">
+                                  Question {questionIndex} of {producerQuestionnaireTotal}
+                                </p>
+                                <p>
+                                  Estimated time to complete task:{' '}
+                                  {controller.formatHoursLabel(template.defaultHours)}
+                                </p>
+                                <div className="task-controls inline-under-title">
+                                  <div className="day-pill-row">
+                                    {UI.dayLabels.map((label, idx) => (
+                                      <button
+                                        key={label}
+                                        className={`day-pill ${draft.day === idx ? 'active-day' : ''}`}
+                                        onClick={() =>
+                                          setDraftByTemplateId((prev) => ({
+                                            ...prev,
+                                            [template.id]: {
+                                              ...draft,
+                                              day: idx,
+                                            },
+                                          }))
+                                        }
+                                      >
+                                        {label.slice(0, 3)}
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  <label className="hours-field">
+                                    Hours
+                                    <select
+                                      value={draft.hours}
+                                      onChange={(e) =>
+                                        setDraftByTemplateId((prev) => ({
+                                          ...prev,
+                                          [template.id]: {
+                                            ...draft,
+                                            hours: Number(e.target.value),
+                                          },
+                                        }))
+                                      }
+                                    >
+                                      {UI.hourStepOptions().map((value) => (
+                                        <option key={value} value={value}>
+                                          {controller.formatHoursLabel(value)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+
+                                  {requiresRowSelection && transferDraft ? (
+                                    <div className="row-select-field">
+                                      <p className="muted">{rowPrompt}</p>
+                                      {transferDraft.rows.map((rowDraft, rowIndex) => (
+                                        <div key={`transfer-row-${template.id}-${rowIndex}`} className="task-action-row edit-window">
+                                          <label className="hours-field">
+                                            {rowIndex + 1 === 1 ? 'Row' : `Additional row ${rowIndex + 1}`}
+                                            <select
+                                              value={rowDraft.rowNumber ?? ''}
+                                              onChange={(e) =>
+                                                updateTransferQuestionDraft(template.id, (current) => ({
+                                                  ...current,
+                                                  rows: current.rows.map((item, idx) =>
+                                                    idx === rowIndex
+                                                      ? { ...item, rowNumber: e.target.value ? Number(e.target.value) : null }
+                                                      : item,
+                                                  ),
+                                                }))
+                                              }
+                                            >
+                                              <option value="">Select row</option>
+                                              {Array.from({ length: 9 }, (_, idx) => 9 - idx).map((rowNumber) => (
+                                                <option key={`row-${rowNumber}`} value={rowNumber}>
+                                                  Row {rowNumber}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                          <label className="hours-field">
+                                            Enter strain name
+                                            <input
+                                              placeholder="Type strain name"
+                                              value={rowDraft.strainName}
+                                              onChange={(e) =>
+                                                updateTransferQuestionDraft(template.id, (current) => ({
+                                                  ...current,
+                                                  rows: current.rows.map((item, idx) =>
+                                                    idx === rowIndex ? { ...item, strainName: e.target.value } : item,
+                                                  ),
+                                                }))
+                                              }
+                                            />
+                                          </label>
+                                        </div>
+                                      ))}
+                                      <div className="button-row">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateTransferQuestionDraft(template.id, (current) => ({
+                                              ...current,
+                                              finalized: false,
+                                              rows:
+                                                current.rows.length >= 9
+                                                  ? current.rows
+                                                  : [...current.rows, { rowNumber: null, strainName: '' }],
+                                            }))
+                                          }
+                                          disabled={transferDraft.rows.length >= 9}
+                                        >
+                                          Transplant another row
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateTransferQuestionDraft(template.id, (current) => ({
+                                              ...current,
+                                              finalized: true,
+                                            }))
+                                          }
+                                        >
+                                          No more rows need to be transplanted
+                                        </button>
+                                      </div>
+                                      {transferDraft.finalized ? (
+                                        <p className="muted">Rows finalized. Choose a scheduling option below.</p>
+                                      ) : (
+                                        <p className="muted">Finalize rows before scheduling this task.</p>
+                                      )}
+                                    </div>
+                                  ) : null}
+
+                                  {requiresRowSelection && !transferDraft ? (
+                                    <label className="hours-field row-select-field">
+                                      {rowPrompt}
+                                      <select
+                                        value={draft.flowerRowNumber ?? ''}
+                                        onChange={(e) =>
+                                          setDraftByTemplateId((prev) => ({
+                                            ...prev,
+                                            [template.id]: {
+                                              ...draft,
+                                              flowerRowNumber: e.target.value ? Number(e.target.value) : null,
+                                            },
+                                          }))
+                                        }
+                                      >
+                                        <option value="">Select row</option>
+                                        {Array.from({ length: 9 }, (_, idx) => 9 - idx).map((rowNumber) => (
+                                          <option key={`row-${rowNumber}`} value={rowNumber}>
+                                            Row {rowNumber}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  ) : null}
+
+                                  <div className="task-action-row">
+                                    <button
+                                      onClick={() => {
+                                        let ok = false;
+                                        if (isTransferTask && transferDraft) {
+                                          if (!canSchedule) {
+                                            alert('Finalize transplant rows and select at least one row before scheduling.');
+                                            return;
+                                          }
+                                          const [primaryRow, ...additionalRows] = selectedTransferRows;
+                                          if (!primaryRow) {
+                                            alert('Select at least one row before scheduling.');
+                                            return;
+                                          }
+                                          const draftForPrimary = {
+                                            ...draft,
+                                            flowerRowNumber: primaryRow.rowNumber,
+                                          };
+                                          setDraftByTemplateId((prev) => ({
+                                            ...prev,
+                                            [template.id]: draftForPrimary,
+                                          }));
+                                          controller.removePlan(template.id, false);
+                                          controller.removePlan(template.id, true);
+                                          ok = scheduleFromDraft(template, draftForPrimary, false);
+                                          if (ok && additionalRows.length > 0) {
+                                            controller.planAdditionalTransferRows({
+                                              template,
+                                              hours: draftForPrimary.hours,
+                                              preferredDay: draftForPrimary.day,
+                                              forNextWeek: false,
+                                              rows: additionalRows,
+                                            });
+                                          }
+                                        } else {
+                                          ok = scheduleFromDraft(template, draft, false);
+                                        }
+                                        if (!ok) return;
+                                      }}
+                                      disabled={!canSchedule}
+                                    >
+                                      Schedule this week
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        controller.setTemplateNotNeededThisWeek(
+                                          template.id,
+                                          true,
+                                        );
+                                      }}
+                                    >
+                                      Not needed this week
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        let ok = false;
+                                        if (isTransferTask && transferDraft) {
+                                          if (!canSchedule) {
+                                            alert('Finalize transplant rows and select at least one row before scheduling.');
+                                            return;
+                                          }
+                                          const [primaryRow, ...additionalRows] = selectedTransferRows;
+                                          if (!primaryRow) {
+                                            alert('Select at least one row before scheduling.');
+                                            return;
+                                          }
+                                          const draftForPrimary = {
+                                            ...draft,
+                                            flowerRowNumber: primaryRow.rowNumber,
+                                          };
+                                          setDraftByTemplateId((prev) => ({
+                                            ...prev,
+                                            [template.id]: draftForPrimary,
+                                          }));
+                                          controller.removePlan(template.id, false);
+                                          controller.removePlan(template.id, true);
+                                          ok = scheduleFromDraft(template, draftForPrimary, true);
+                                          if (ok && additionalRows.length > 0) {
+                                            controller.planAdditionalTransferRows({
+                                              template,
+                                              hours: draftForPrimary.hours,
+                                              preferredDay: draftForPrimary.day,
+                                              forNextWeek: true,
+                                              rows: additionalRows,
+                                            });
+                                          }
+                                        } else {
+                                          ok = scheduleFromDraft(template, draft, true);
+                                        }
+                                        if (!ok) return;
+                                      }}
+                                      disabled={!canSchedule}
+                                    >
+                                      Schedule task next week
+                                    </button>
+                                  </div>
+                                </div>
+                                {template.autoScheduledTasks.length > 0 ? (
+                                  <p className="scheduled-tag">
+                                    Auto-schedules {template.autoScheduledTasks.length} related tasks
+                                  </p>
+                                ) : null}
+                                {thisWeek || nextWeek ? (
+                                  <p className="scheduled-tag">
+                                    Scheduled for {thisWeek ? 'this week' : 'next week'}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </article>
+                  ))}
                 </section>
-              ) : (
-                <p className="muted">
-                  All tasks are reviewed. Open the &ldquo;Task List for Next Two Weeks&rdquo; tab to view the full plan.
-                </p>
-              )
+              ))
             ) : (
               Object.entries(byRoom).map(([room, templates]) => (
                 <section key={room} className="room-block">
@@ -2535,6 +3700,11 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                               const thisWeek = controller.findThisWeekRequest(template.id);
                               const nextWeek = controller.findExplicitNextWeekTask(template.id);
                               const requiresRowSelection = controller.templateRequiresFlowerRowSelection(template);
+                              const rowPrompt = isTransferTaskTitle(template.title)
+                                ? 'Which row will you be transplanting veg plants into?'
+                                : normalized(template.title).includes('harvest')
+                                  ? 'Which flower room row are you harvesting?'
+                                  : 'Which flower room row are you rototilling and adding amendments to?';
                               const scheduled = Boolean(thisWeek || nextWeek);
                               const lockedScheduled =
                                 !roleCanAdmin(controller.selectedRole)
@@ -2594,7 +3764,7 @@ function WeeklyPage({ controller }: { controller: AppController }) {
 
                                       {requiresRowSelection ? (
                                         <label className="hours-field row-select-field">
-                                          Which row will you be transplanting veg plants into?
+                                          {rowPrompt}
                                           <select
                                             value={draft.flowerRowNumber ?? ''}
                                             onChange={(e) =>
@@ -2949,10 +4119,11 @@ function AdminPage({ controller }: { controller: AppController }) {
   const [category, setCategory] = useState('');
   const [priority, setPriority] = useState(3);
   const [hours, setHours] = useState(1);
-  const [taskRecurrenceMode, setTaskRecurrenceMode] = useState<'none' | 'calendarDate' | 'everyDays' | 'monthly'>('none');
+  const [taskRecurrenceMode, setTaskRecurrenceMode] = useState<'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly'>('none');
   const [taskRecurrenceDateIso, setTaskRecurrenceDateIso] = useState('');
   const [taskRecurrenceEveryDays, setTaskRecurrenceEveryDays] = useState(7);
   const [taskRecurrenceMonthlyDay, setTaskRecurrenceMonthlyDay] = useState(1);
+  const [taskRecurrenceWeekdays, setTaskRecurrenceWeekdays] = useState<number[]>([]);
   const [createAutoScheduledTasks, setCreateAutoScheduledTasks] = useState<AutoScheduledTaskDraft[]>([]);
   const [createSendDataToSpecificEmployee, setCreateSendDataToSpecificEmployee] = useState(false);
   const [createDataRecipientRole, setCreateDataRecipientRole] = useState<UserRole>('producer');
@@ -2979,6 +4150,7 @@ function AdminPage({ controller }: { controller: AppController }) {
       taskRecurrenceDateIso,
       taskRecurrenceEveryDays,
       taskRecurrenceMonthlyDay,
+      taskRecurrenceWeekdays,
       autoScheduledTasks: sortAutoTaskDrafts(createAutoScheduledTasks),
       sendDataToSpecificEmployee: createSendDataToSpecificEmployee,
       dataRecipientRole: createDataRecipientRole,
@@ -2993,6 +4165,7 @@ function AdminPage({ controller }: { controller: AppController }) {
     setTaskRecurrenceDateIso('');
     setTaskRecurrenceEveryDays(7);
     setTaskRecurrenceMonthlyDay(1);
+    setTaskRecurrenceWeekdays([]);
     setCreateAutoScheduledTasks([]);
     setCreateSendDataToSpecificEmployee(false);
     setCreateDataRecipientRole('producer');
@@ -3116,10 +4289,10 @@ function AdminPage({ controller }: { controller: AppController }) {
 
   return (
     <div className="grid">
-      <div className="card">
+      <div className="card template-create-card">
         <h2>Create New Task Template</h2>
         {controller.selectedRole === 'ceo' ? <p className="muted"><strong>Admin View</strong></p> : null}
-        <form onSubmit={onCreate} className="form-grid">
+        <form onSubmit={onCreate} className="form-grid template-create-grid">
           <label>
             Track
             <select value={track} onChange={(e) => setTrack(e.target.value as AssessmentTrack)}>
@@ -3160,14 +4333,35 @@ function AdminPage({ controller }: { controller: AppController }) {
             Task Recurrence
             <select
               value={taskRecurrenceMode}
-              onChange={(e) => setTaskRecurrenceMode(e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly')}
+              onChange={(e) => setTaskRecurrenceMode(e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly')}
             >
               <option value="none">No recurrence</option>
+              <option value="weekly">Weekly (day of week)</option>
               <option value="calendarDate">Calendar date</option>
               <option value="everyDays">Every certain days</option>
               <option value="monthly">Monthly (day of month)</option>
             </select>
           </label>
+          {taskRecurrenceMode === 'weekly' ? (
+            <div className="recurring-weekday-checklist full-span">
+              {UI.dayLabels.map((label, weekday) => (
+                <label key={`create-task-recur-${label}`} className="inline-check">
+                  <input
+                    type="checkbox"
+                    checked={taskRecurrenceWeekdays.includes(weekday)}
+                    onChange={(e) =>
+                      setTaskRecurrenceWeekdays((current) =>
+                        e.target.checked
+                          ? Array.from(new Set([...current, weekday])).sort((a, b) => a - b)
+                          : current.filter((day) => day !== weekday),
+                      )
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          ) : null}
           {taskRecurrenceMode === 'calendarDate' ? (
             <label>
               Calendar Date
@@ -3279,6 +4473,7 @@ function AdminPage({ controller }: { controller: AppController }) {
                               daysUntilDue: e.target.value ? null : item.daysUntilDue,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
+                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -3299,6 +4494,7 @@ function AdminPage({ controller }: { controller: AppController }) {
                               daysUntilDue: e.target.value ? Number(e.target.value) : null,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
+                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -3329,16 +4525,23 @@ function AdminPage({ controller }: { controller: AppController }) {
                                 ...item,
                                 recurrence: 'none',
                                 recurringWeekday: null,
+                                recurringWeekdays: [],
                                 recurringDayOfMonth: null,
                                 recurringMonthOfYear: null,
                               };
                             }
+                            const nextWeekdays = option.value === 'weekly'
+                              ? recurringWeekdaysForTask(item).length > 0
+                                ? recurringWeekdaysForTask(item)
+                                : [item.recurringWeekday ?? 0]
+                              : [];
                             return {
                               ...item,
                               dueDateIso: '',
                               daysUntilDue: null,
                               recurrence: option.value,
-                              recurringWeekday: option.value === 'weekly' ? (item.recurringWeekday ?? 0) : null,
+                              recurringWeekday: option.value === 'weekly' ? nextWeekdays[0] ?? 0 : null,
+                              recurringWeekdays: nextWeekdays,
                               recurringDayOfMonth:
                                 option.value === 'monthly' || option.value === 'yearly'
                                   ? (item.recurringDayOfMonth ?? 1)
@@ -3354,25 +4557,35 @@ function AdminPage({ controller }: { controller: AppController }) {
                   ))}
                 </div>
                 {task.recurrence === 'weekly' ? (
-                  <div className="day-pill-row recurring-row full-span">
-                    {UI.dayLabels.map((label, weekday) => (
-                      <button
-                        key={`create-recurring-${index}-${label}`}
-                        type="button"
-                        className={`day-pill ${task.recurringWeekday === weekday ? 'active-day' : ''}`}
-                        onClick={() =>
-                          setCreateAutoScheduledTasks((current) =>
-                            current.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, recurringWeekday: weekday }
-                                : item,
-                            ),
-                          )
-                        }
-                      >
-                        {label.slice(0, 3)}
-                      </button>
-                    ))}
+                  <div className="recurring-weekday-checklist full-span">
+                    {UI.dayLabels.map((label, weekday) => {
+                      const selectedWeekdays = recurringWeekdaysForTask(task);
+                      return (
+                        <label key={`create-recurring-${index}-${label}`} className="inline-check">
+                          <input
+                            type="checkbox"
+                            checked={selectedWeekdays.includes(weekday)}
+                            onChange={(e) =>
+                              setCreateAutoScheduledTasks((current) =>
+                                current.map((item, itemIndex) => {
+                                  if (itemIndex !== index) return item;
+                                  const currentWeekdays = recurringWeekdaysForTask(item);
+                                  const nextWeekdays = e.target.checked
+                                    ? Array.from(new Set([...currentWeekdays, weekday])).sort((a, b) => a - b)
+                                    : currentWeekdays.filter((day) => day !== weekday);
+                                  return {
+                                    ...item,
+                                    recurringWeekday: nextWeekdays[0] ?? null,
+                                    recurringWeekdays: nextWeekdays,
+                                  };
+                                }),
+                              )
+                            }
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
                   </div>
                 ) : null}
                 {task.recurrence === 'monthly' ? (
@@ -3465,6 +4678,7 @@ function AdminPage({ controller }: { controller: AppController }) {
                       daysUntilDue: null,
                       recurrence: 'none',
                       recurringWeekday: null,
+                      recurringWeekdays: [],
                       recurringDayOfMonth: null,
                       recurringMonthOfYear: null,
                     },
@@ -3527,6 +4741,7 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState({
     ...template,
+    taskRecurrenceWeekdays: templateRecurrenceWeekdays(template.taskRecurrenceWeekdays),
     autoScheduledTasks: sortAutoTaskDrafts(template.autoScheduledTasks),
   });
   const orderedDraftAutoTaskIndexes = draft.autoScheduledTasks
@@ -3549,6 +4764,7 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
               onClick={() => {
                 setDraft({
                   ...template,
+                  taskRecurrenceWeekdays: templateRecurrenceWeekdays(template.taskRecurrenceWeekdays),
                   autoScheduledTasks: sortAutoTaskDrafts(template.autoScheduledTasks),
                 });
                 setIsEditing(true);
@@ -3595,15 +4811,41 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
             onChange={(e) =>
               setDraft({
                 ...draft,
-                taskRecurrenceMode: e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly',
+                taskRecurrenceMode: e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly',
               })
             }
           >
             <option value="none">No recurrence</option>
+            <option value="weekly">Weekly (day of week)</option>
             <option value="calendarDate">Calendar date</option>
             <option value="everyDays">Every certain days</option>
             <option value="monthly">Monthly (day of month)</option>
           </select>
+          {draft.taskRecurrenceMode === 'weekly' ? (
+            <div className="recurring-weekday-checklist full-span">
+              {UI.dayLabels.map((label, weekday) => {
+                const selectedWeekdays = templateRecurrenceWeekdays(draft.taskRecurrenceWeekdays);
+                return (
+                  <label key={`edit-task-recur-${draft.id}-${label}`} className="inline-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedWeekdays.includes(weekday)}
+                      onChange={(e) =>
+                        setDraft((current) => {
+                          const currentWeekdays = templateRecurrenceWeekdays(current.taskRecurrenceWeekdays);
+                          const nextWeekdays = e.target.checked
+                            ? Array.from(new Set([...currentWeekdays, weekday])).sort((a, b) => a - b)
+                            : currentWeekdays.filter((day) => day !== weekday);
+                          return { ...current, taskRecurrenceWeekdays: nextWeekdays };
+                        })
+                      }
+                    />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
           {draft.taskRecurrenceMode === 'calendarDate' ? (
             <input
               type="date"
@@ -3707,6 +4949,7 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                               daysUntilDue: e.target.value ? null : item.daysUntilDue,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
+                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -3728,6 +4971,7 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                               daysUntilDue: e.target.value ? Number(e.target.value) : null,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
+                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -3759,16 +5003,23 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                                 ...item,
                                 recurrence: 'none',
                                 recurringWeekday: null,
+                                recurringWeekdays: [],
                                 recurringDayOfMonth: null,
                                 recurringMonthOfYear: null,
                               };
                             }
+                            const nextWeekdays = option.value === 'weekly'
+                              ? recurringWeekdaysForTask(item).length > 0
+                                ? recurringWeekdaysForTask(item)
+                                : [item.recurringWeekday ?? 0]
+                              : [];
                             return {
                               ...item,
                               dueDateIso: '',
                               daysUntilDue: null,
                               recurrence: option.value,
-                              recurringWeekday: option.value === 'weekly' ? (item.recurringWeekday ?? 0) : null,
+                              recurringWeekday: option.value === 'weekly' ? nextWeekdays[0] ?? 0 : null,
+                              recurringWeekdays: nextWeekdays,
                               recurringDayOfMonth:
                                 option.value === 'monthly' || option.value === 'yearly'
                                   ? (item.recurringDayOfMonth ?? 1)
@@ -3784,26 +5035,36 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                   ))}
                 </div>
                 {task.recurrence === 'weekly' ? (
-                  <div className="day-pill-row recurring-row full-span">
-                    {UI.dayLabels.map((label, weekday) => (
-                      <button
-                        key={`edit-recurring-${index}-${label}`}
-                        type="button"
-                        className={`day-pill ${task.recurringWeekday === weekday ? 'active-day' : ''}`}
-                        onClick={() =>
-                          setDraft((current) => ({
-                            ...current,
-                            autoScheduledTasks: current.autoScheduledTasks.map((item, itemIndex) =>
-                              itemIndex === index
-                                ? { ...item, recurringWeekday: weekday }
-                                : item,
-                            ),
-                          }))
-                        }
-                      >
-                        {label.slice(0, 3)}
-                      </button>
-                    ))}
+                  <div className="recurring-weekday-checklist full-span">
+                    {UI.dayLabels.map((label, weekday) => {
+                      const selectedWeekdays = recurringWeekdaysForTask(task);
+                      return (
+                        <label key={`edit-recurring-${index}-${label}`} className="inline-check">
+                          <input
+                            type="checkbox"
+                            checked={selectedWeekdays.includes(weekday)}
+                            onChange={(e) =>
+                              setDraft((current) => ({
+                                ...current,
+                                autoScheduledTasks: current.autoScheduledTasks.map((item, itemIndex) => {
+                                  if (itemIndex !== index) return item;
+                                  const currentWeekdays = recurringWeekdaysForTask(item);
+                                  const nextWeekdays = e.target.checked
+                                    ? Array.from(new Set([...currentWeekdays, weekday])).sort((a, b) => a - b)
+                                    : currentWeekdays.filter((day) => day !== weekday);
+                                  return {
+                                    ...item,
+                                    recurringWeekday: nextWeekdays[0] ?? null,
+                                    recurringWeekdays: nextWeekdays,
+                                  };
+                                }),
+                              }))
+                            }
+                          />
+                          {label}
+                        </label>
+                      );
+                    })}
                   </div>
                 ) : null}
                 {task.recurrence === 'monthly' ? (
@@ -3904,6 +5165,7 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                         daysUntilDue: null,
                         recurrence: 'none',
                         recurringWeekday: null,
+                        recurringWeekdays: [],
                         recurringDayOfMonth: null,
                         recurringMonthOfYear: null,
                       },
@@ -3964,6 +5226,7 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                   onClick={() => {
                     setDraft({
                       ...template,
+                      taskRecurrenceWeekdays: templateRecurrenceWeekdays(template.taskRecurrenceWeekdays),
                       autoScheduledTasks: sortAutoTaskDrafts(template.autoScheduledTasks),
                     });
                     setIsEditing(false);

@@ -15,6 +15,8 @@ import {
 import type {
   AssessmentTrack,
   AssessmentTemplate,
+  FlowerInventoryLot,
+  FlowerSalesAppointment,
   FollowUpRule,
   InboxMessage,
   PlanAssessmentResult,
@@ -29,6 +31,8 @@ const templatesStorageKey = 'm.templates.v1';
 const suppliesDraftStorageKey = 'm.supplies_drafts.v1';
 const completedCalendarStorageKey = 'm.completed_calendar.v1';
 const inboxStorageKey = 'm.inbox.v1';
+const flowerSalesInventoryStorageKey = 'm.flower_sales.inventory.v1';
+const flowerSalesAppointmentsStorageKey = 'm.flower_sales.appointments.v1';
 const runtimeSnapshotVersion = 1;
 
 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -46,6 +50,8 @@ const producerRestoredClosingChecklist = [
   { id: 'rest-close-log', title: 'Sign out of LOG' },
   { id: 'rest-close-gate', title: 'Lock gate' },
 ];
+
+const producerTwoWeekStartBaselineIso = '2026-05-01';
 
 const retailBudtenderRoles: UserRole[] = [
   'budtenderTd',
@@ -117,6 +123,22 @@ function clampHours(value: number): number {
 function normalizeRecurrence(value: unknown): 'none' | 'weekly' | 'monthly' | 'yearly' {
   if (value === 'weekly' || value === 'monthly' || value === 'yearly') return value;
   return 'none';
+}
+
+function normalizeRecurringWeekdays(
+  value: unknown,
+  fallbackWeekday: number | null = null,
+): number[] {
+  const raw = Array.isArray(value)
+    ? value
+    : typeof fallbackWeekday === 'number'
+      ? [fallbackWeekday]
+      : [];
+  const normalized = raw
+    .map((day) => Number(day))
+    .filter((day) => Number.isFinite(day))
+    .map((day) => Math.max(0, Math.min(6, Math.floor(day))));
+  return Array.from(new Set(normalized)).sort((a, b) => a - b);
 }
 
 function compareRooms(a: string, b: string): number {
@@ -300,6 +322,11 @@ type ProducerTemplateMigrationUpdate = {
   title?: string;
   defaultHours?: number;
   remove?: boolean;
+  taskRecurrenceMode?: 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly';
+  taskRecurrenceDateIso?: string;
+  taskRecurrenceEveryDays?: number | null;
+  taskRecurrenceMonthlyDay?: number | null;
+  taskRecurrenceWeekdays?: number[];
 };
 
 function producerRoomBucket(room: string): 'veg' | 'flower' | 'drying' | 'west' | 'other' | 'unknown' {
@@ -324,37 +351,79 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
   [producerTemplateMigrationKey('veg', 'Plant death report tag numbers list send to TD Manager ZB')]: {
     title: 'Plant death report tag numbers list sent to TD Manager ZB',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [0, 2, 4],
   },
   [producerTemplateMigrationKey('veg', 'Plant death report tag numbers list sent to TD Manager ZB')]: {
     title: 'Plant death report tag numbers list sent to TD Manager ZB',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [0, 2, 4],
   },
   [producerTemplateMigrationKey('flower', 'Plant death report tag numbers list send to TD Manager ZB')]: {
     title: 'Plant death report tag numbers list sent to TD Manager ZB',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [0, 2, 4],
   },
   [producerTemplateMigrationKey('flower', 'Plant death report tag numbers list sent to TD Manager ZB')]: {
     title: 'Plant death report tag numbers list sent to TD Manager ZB',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [0, 2, 4],
   },
   [producerTemplateMigrationKey('veg', 'Spray Soap and Water')]: {
     title: 'Spray soap and water',
     defaultHours: 20 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [2],
   },
-  [producerTemplateMigrationKey('veg', 'Water Mothers')]: { defaultHours: 20 / 60 },
+  [producerTemplateMigrationKey('veg', 'Spray soap and water')]: {
+    title: 'Spray soap and water',
+    defaultHours: 20 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [2],
+  },
+  [producerTemplateMigrationKey('veg', 'Water Mothers')]: {
+    defaultHours: 20 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [2, 5],
+  },
   [producerTemplateMigrationKey('veg', 'Inspect for Bugs')]: {
     title: 'Inspect for bugs',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [2],
   },
-  [producerTemplateMigrationKey('veg', 'Feed')]: { defaultHours: 10 / 60 },
+  [producerTemplateMigrationKey('veg', 'Inspect for bugs')]: {
+    title: 'Inspect for bugs',
+    defaultHours: 10 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [2],
+  },
+  [producerTemplateMigrationKey('veg', 'Feed')]: {
+    defaultHours: 10 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 1,
+  },
+  [producerTemplateMigrationKey('veg', 'Feed mothers')]: {
+    title: 'Feed',
+    defaultHours: 10 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 1,
+  },
   [producerTemplateMigrationKey('veg', 'Prune Moms')]: { defaultHours: 30 / 60 },
   [producerTemplateMigrationKey('veg', 'Rotate/Prune Mothers so they are not touching eachother')]: {
     title: 'Rotate/Prune Mothers so they are not touching each other',
     defaultHours: 20 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 3,
   },
   [producerTemplateMigrationKey('veg', 'Rotate/Prune Mothers so they are not touching each other')]: {
     title: 'Rotate/Prune Mothers so they are not touching each other',
     defaultHours: 20 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 3,
   },
   [producerTemplateMigrationKey('veg', 'Schedule Mother to watered again')]: {
     title: 'Schedule Mother to water again',
@@ -367,10 +436,16 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
   [producerTemplateMigrationKey('veg', 'Do they need to be topped? Stay below 16"')]: {
     title: 'Do they need to be topped? Stay below 16 inches.',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'everyDays',
+    taskRecurrenceDateIso: '2026-04-15',
+    taskRecurrenceEveryDays: 15,
   },
   [producerTemplateMigrationKey('veg', 'Do they need to be topped? Stay below 16 inches.')]: {
     title: 'Do they need to be topped? Stay below 16 inches.',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'everyDays',
+    taskRecurrenceDateIso: '2026-04-15',
+    taskRecurrenceEveryDays: 15,
   },
   [producerTemplateMigrationKey('veg', 'Veg Plants made Tag numbers list send to TD Manager ZB')]: {
     title: 'Veg plants made tag numbers list sent to TD Manager ZB',
@@ -391,11 +466,11 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
   [producerTemplateMigrationKey('veg', 'Schedule Next watering')]: { defaultHours: 10 / 60 },
   [producerTemplateMigrationKey('veg', 'Actually make schedule next watering')]: { defaultHours: 5 / 60 },
   [producerTemplateMigrationKey('veg', 'Transfer Veg plants to Flower Room')]: {
-    title: 'Transfer veg plants to flower room',
+    title: 'TRANSFER VEG PLANTS TO FLOWER ROOM',
     defaultHours: 1,
   },
   [producerTemplateMigrationKey('veg', 'Transfer veg plants to flower room')]: {
-    title: 'Transfer veg plants to flower room',
+    title: 'TRANSFER VEG PLANTS TO FLOWER ROOM',
     defaultHours: 1,
   },
   [producerTemplateMigrationKey('veg', 'Increase Light intensity or timer to 18-22 hours')]: {
@@ -406,7 +481,11 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
     title: 'Increase light intensity or timer to 18 to 22 hours',
     defaultHours: 5 / 60,
   },
-  [producerTemplateMigrationKey('veg', 'Remove dead leaves')]: { defaultHours: 10 / 60 },
+  [producerTemplateMigrationKey('veg', 'Remove dead leaves')]: {
+    defaultHours: 10 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [3],
+  },
   [producerTemplateMigrationKey('veg', 'Spread out the Canopy')]: {
     title: 'Spread out the canopy',
     defaultHours: 10 / 60,
@@ -418,28 +497,46 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
   [producerTemplateMigrationKey('veg', 'Mother Replacement candidates')]: {
     title: 'Mother replacement candidates',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 4,
   },
   [producerTemplateMigrationKey('veg', 'Mother replacement candidates')]: {
     title: 'Mother replacement candidates',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 4,
   },
   [producerTemplateMigrationKey('veg', 'Do you need clean the trough')]: {
     title: 'Do you need to clean the trough?',
     defaultHours: 30 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 3,
   },
   [producerTemplateMigrationKey('veg', 'Do you need to clean the trough?')]: {
     title: 'Do you need to clean the trough?',
     defaultHours: 30 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 3,
   },
   [producerTemplateMigrationKey('veg', 'Do you need to Change out RO Filters')]: {
     title: 'Do you need to change out RO filters?',
     defaultHours: 5 / 60,
+    taskRecurrenceMode: 'everyDays',
+    taskRecurrenceDateIso: '2026-06-01',
+    taskRecurrenceEveryDays: 365,
   },
   [producerTemplateMigrationKey('veg', 'Do you need to change out RO filters?')]: {
     title: 'Do you need to change out RO filters?',
     defaultHours: 5 / 60,
+    taskRecurrenceMode: 'everyDays',
+    taskRecurrenceDateIso: '2026-06-01',
+    taskRecurrenceEveryDays: 365,
   },
-  [producerTemplateMigrationKey('veg', 'Do you need to vacuum')]: { defaultHours: 30 / 60 },
+  [producerTemplateMigrationKey('veg', 'Do you need to vacuum')]: {
+    defaultHours: 30 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [2],
+  },
   [producerTemplateMigrationKey('veg', 'Clones made Tag numbers list send to TD General Manager ZB')]: {
     title: 'Clones made tag numbers list sent to TD General Manager ZB',
     defaultHours: 10 / 60,
@@ -462,11 +559,11 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
   [producerTemplateMigrationKey('flower', 'Do you need to Deleaf 30%')]: { remove: true },
   [producerTemplateMigrationKey('flower', 'Do you need to de-leaf 30%')]: { remove: true },
   [producerTemplateMigrationKey('flower', 'Harvest, Buck, Wet Trim, place buds in drying baskets in Drying Room')]: {
-    title: 'Harvest buck wet trim. Place buds in drying baskets in drying room per row.',
+    title: 'Flower room, harvest, buck, wet trim, and place buds in drying basket in drying room per row.',
     defaultHours: 4,
   },
   [producerTemplateMigrationKey('flower', 'Harvest buck wet trim. Place buds in drying baskets in drying room per row.')]: {
-    title: 'Harvest buck wet trim. Place buds in drying baskets in drying room per row.',
+    title: 'Flower room, harvest, buck, wet trim, and place buds in drying basket in drying room per row.',
     defaultHours: 4,
   },
   [producerTemplateMigrationKey('flower', 'Harvested Plants Tag numbers list send to TD Manager ZB')]: {
@@ -490,11 +587,11 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
     defaultHours: 2,
   },
   [producerTemplateMigrationKey('flower', 'Add Soil Amendments and Rototil Soil')]: {
-    title: 'Add soil amendments and rototill soil 3 rows',
+    title: 'Add soil amendments and rototill',
     defaultHours: 2,
   },
   [producerTemplateMigrationKey('flower', 'Add soil amendments and rototill soil 3 rows')]: {
-    title: 'Add soil amendments and rototill soil 3 rows',
+    title: 'Add soil amendments and rototill',
     defaultHours: 2,
   },
   [producerTemplateMigrationKey('flower', 'Check for bugs')]: { defaultHours: 20 / 60 },
@@ -513,23 +610,37 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
     title: 'Do you need to prop up plants with stakes?',
     defaultHours: 20 / 60,
   },
-  [producerTemplateMigrationKey('flower', 'Do you need to vacuum')]: { defaultHours: 2 },
+  [producerTemplateMigrationKey('flower', 'Do you need to vacuum')]: {
+    defaultHours: 2,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [2],
+  },
   [producerTemplateMigrationKey('flower', 'Exhaust fans running')]: { defaultHours: 5 / 60 },
   [producerTemplateMigrationKey('flower', 'Do you need clean the trough')]: {
     title: 'Do you need to clean the trough?',
     defaultHours: 20 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 3,
   },
   [producerTemplateMigrationKey('flower', 'Do you need to clean the trough?')]: {
     title: 'Do you need to clean the trough?',
     defaultHours: 20 / 60,
+    taskRecurrenceMode: 'monthly',
+    taskRecurrenceMonthlyDay: 3,
   },
   [producerTemplateMigrationKey('flower', 'Do you need to Change out RO Filters')]: {
     title: 'Do you need to change out RO filters?',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'everyDays',
+    taskRecurrenceDateIso: '2026-12-01',
+    taskRecurrenceEveryDays: 365,
   },
   [producerTemplateMigrationKey('flower', 'Do you need to change out RO filters?')]: {
     title: 'Do you need to change out RO filters?',
     defaultHours: 10 / 60,
+    taskRecurrenceMode: 'everyDays',
+    taskRecurrenceDateIso: '2026-12-01',
+    taskRecurrenceEveryDays: 365,
   },
   [producerTemplateMigrationKey('flower', 'Lights working')]: { defaultHours: 5 / 60 },
   [producerTemplateMigrationKey('drying', 'Check moisture levels of buds with humidity probe, enter humidity level….when moisture is at 14%, then dry trim')]: {
@@ -595,11 +706,32 @@ const producerTemplateMigrationUpdates: Record<string, ProducerTemplateMigration
     defaultHours: 5 / 60,
   },
   [producerTemplateMigrationKey('other', 'Take garbage outside')]: { defaultHours: 10 / 60 },
+  [producerTemplateMigrationKey('other', 'Clean office')]: {
+    title: 'Clean the office',
+    defaultHours: 30 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [3],
+  },
+  [producerTemplateMigrationKey('other', 'Clean the office')]: {
+    title: 'Clean the office',
+    defaultHours: 30 / 60,
+    taskRecurrenceMode: 'weekly',
+    taskRecurrenceWeekdays: [3],
+  },
 };
 
 function isTransferVegToFlowerTaskTitle(title: string): boolean {
   const normalized = normalizeTaskTitle(title);
   return normalized.includes('transfer veg plants to flower room');
+}
+
+function isFlowerRowActionTaskTitle(title: string): boolean {
+  const normalized = normalizeTaskTitle(title);
+  return (
+    normalized.includes('add soil amendments and rototill')
+    || normalized.includes('harvest buck wet trim')
+    || normalized.includes('place buds in drying basket')
+  );
 }
 
 function isRoFilterTaskTitle(title: string): boolean {
@@ -665,6 +797,7 @@ export class AppController {
     producer: [],
     generalManager: [],
     joManager: [],
+    flowerSales: [],
     budtenderTd: [],
     budtenderTdJunior: [],
     budtenderJo: [],
@@ -675,6 +808,7 @@ export class AppController {
     producer: [],
     generalManager: [],
     joManager: [],
+    flowerSales: [],
     budtenderTd: [],
     budtenderTdJunior: [],
     budtenderJo: [],
@@ -685,6 +819,7 @@ export class AppController {
     producer: [],
     generalManager: [],
     joManager: [],
+    flowerSales: [],
     budtenderTd: [],
     budtenderTdJunior: [],
     budtenderJo: [],
@@ -695,6 +830,7 @@ export class AppController {
     producer: [],
     generalManager: [],
     joManager: [],
+    flowerSales: [],
     budtenderTd: [],
     budtenderTdJunior: [],
     budtenderJo: [],
@@ -705,6 +841,7 @@ export class AppController {
     producer: [],
     generalManager: [],
     joManager: [],
+    flowerSales: [],
     budtenderTd: [],
     budtenderTdJunior: [],
     budtenderJo: [],
@@ -715,6 +852,7 @@ export class AppController {
     producer: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
     generalManager: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
     joManager: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
+    flowerSales: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
     budtenderTd: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
     budtenderTdJunior: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
     budtenderJo: { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
@@ -725,6 +863,7 @@ export class AppController {
     producer: 0,
     generalManager: 0,
     joManager: 0,
+    flowerSales: 0,
     budtenderTd: 0,
     budtenderTdJunior: 0,
     budtenderJo: 0,
@@ -735,6 +874,7 @@ export class AppController {
     producer: isoDate(currentWeekStart()),
     generalManager: isoDate(currentWeekStart()),
     joManager: isoDate(currentWeekStart()),
+    flowerSales: isoDate(currentWeekStart()),
     budtenderTd: isoDate(currentWeekStart()),
     budtenderTdJunior: isoDate(currentWeekStart()),
     budtenderJo: isoDate(currentWeekStart()),
@@ -745,6 +885,7 @@ export class AppController {
     producer: new Set(),
     generalManager: new Set(),
     joManager: new Set(),
+    flowerSales: new Set(),
     budtenderTd: new Set(),
     budtenderTdJunior: new Set(),
     budtenderJo: new Set(),
@@ -755,6 +896,7 @@ export class AppController {
     producer: new Set(),
     generalManager: new Set(),
     joManager: new Set(),
+    flowerSales: new Set(),
     budtenderTd: new Set(),
     budtenderTdJunior: new Set(),
     budtenderJo: new Set(),
@@ -792,6 +934,8 @@ export class AppController {
   dailyTaskAlertsSentByDate: Record<string, Set<UserRole>> = {};
 
   suppliesDraftByTemplateId: Record<string, SuppliesRequestDraft> = {};
+  flowerInventoryLots: FlowerInventoryLot[] = [];
+  flowerSalesAppointments: FlowerSalesAppointment[] = [];
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -830,6 +974,26 @@ export class AppController {
     return this.inboxByRole[this.selectedRole].filter((m) => !m.isRead).length;
   }
 
+  get flowerSalesAvailableInventory(): FlowerInventoryLot[] {
+    return this.flowerInventoryLots
+      .filter((lot) => !lot.soldDateIso)
+      .slice()
+      .sort((a, b) => a.strainName.localeCompare(b.strainName));
+  }
+
+  get flowerSalesSoldLots(): FlowerInventoryLot[] {
+    return this.flowerInventoryLots
+      .filter((lot) => Boolean(lot.soldDateIso))
+      .slice()
+      .sort((a, b) => (b.soldDateIso ?? '').localeCompare(a.soldDateIso ?? ''));
+  }
+
+  get flowerSalesAppointmentsForView(): FlowerSalesAppointment[] {
+    return this.flowerSalesAppointments
+      .slice()
+      .sort((a, b) => a.appointmentDateIso.localeCompare(b.appointmentDateIso));
+  }
+
   get weekLabel(): string {
     const weekStartIso = this.weekStartByTrack[this.activeTrack];
     const weekStart = parseIso(weekStartIso) ?? currentWeekStart();
@@ -852,7 +1016,8 @@ export class AppController {
   }
 
   templateRequiresFlowerRowSelection(template: Pick<AssessmentTemplate, 'track' | 'title'>): boolean {
-    return template.track === 'producer' && isTransferVegToFlowerTaskTitle(template.title);
+    return template.track === 'producer'
+      && (isTransferVegToFlowerTaskTitle(template.title) || isFlowerRowActionTaskTitle(template.title));
   }
 
   allFlowerRoomLifecycleTasks(): WeekTask[] {
@@ -959,6 +1124,10 @@ export class AppController {
       this.loadCompletedCalendarFromStorage();
       this.loadInboxFromStorage();
     }
+    this.loadFlowerSalesInventoryFromStorage();
+    this.loadFlowerSalesAppointmentsFromStorage();
+    this.syncIdCounterFromAllKnownIds();
+    this.ensureProducerTwoWeekStartBaseline();
 
     for (const track of assessmentTracks) {
       this.recomputeTrack(track);
@@ -972,6 +1141,15 @@ export class AppController {
     this.didLoadInitialAssessments = true;
     this.loadInitialPromise = null;
     this.notify();
+  }
+
+  private ensureProducerTwoWeekStartBaseline(): void {
+    const baseline = parseIso(producerTwoWeekStartBaselineIso);
+    const current = parseIso(this.weekStartByTrack.producer);
+    if (!baseline) return;
+    if (!current || current < baseline) {
+      this.weekStartByTrack.producer = producerTwoWeekStartBaselineIso;
+    }
   }
 
   private async loadRuntimeSnapshotIfAvailable(): Promise<boolean> {
@@ -993,6 +1171,7 @@ export class AppController {
       producer: Array.isArray(snapshot.requestsByTrack?.producer) ? snapshot.requestsByTrack.producer : [],
       generalManager: Array.isArray(snapshot.requestsByTrack?.generalManager) ? snapshot.requestsByTrack.generalManager : [],
       joManager: Array.isArray(snapshot.requestsByTrack?.joManager) ? snapshot.requestsByTrack.joManager : [],
+      flowerSales: Array.isArray(snapshot.requestsByTrack?.flowerSales) ? snapshot.requestsByTrack.flowerSales : [],
       budtenderTd: Array.isArray(snapshot.requestsByTrack?.budtenderTd) ? snapshot.requestsByTrack.budtenderTd : [],
       budtenderTdJunior: Array.isArray(snapshot.requestsByTrack?.budtenderTdJunior) ? snapshot.requestsByTrack.budtenderTdJunior : [],
       budtenderJo: Array.isArray(snapshot.requestsByTrack?.budtenderJo) ? snapshot.requestsByTrack.budtenderJo : [],
@@ -1002,6 +1181,7 @@ export class AppController {
       producer: Array.isArray(snapshot.explicitNextByTrack?.producer) ? snapshot.explicitNextByTrack.producer : [],
       generalManager: Array.isArray(snapshot.explicitNextByTrack?.generalManager) ? snapshot.explicitNextByTrack.generalManager : [],
       joManager: Array.isArray(snapshot.explicitNextByTrack?.joManager) ? snapshot.explicitNextByTrack.joManager : [],
+      flowerSales: Array.isArray(snapshot.explicitNextByTrack?.flowerSales) ? snapshot.explicitNextByTrack.flowerSales : [],
       budtenderTd: Array.isArray(snapshot.explicitNextByTrack?.budtenderTd) ? snapshot.explicitNextByTrack.budtenderTd : [],
       budtenderTdJunior: Array.isArray(snapshot.explicitNextByTrack?.budtenderTdJunior) ? snapshot.explicitNextByTrack.budtenderTdJunior : [],
       budtenderJo: Array.isArray(snapshot.explicitNextByTrack?.budtenderJo) ? snapshot.explicitNextByTrack.budtenderJo : [],
@@ -1013,6 +1193,7 @@ export class AppController {
         ? snapshot.completedCalendarByTrack.generalManager
         : [],
       joManager: Array.isArray(snapshot.completedCalendarByTrack?.joManager) ? snapshot.completedCalendarByTrack.joManager : [],
+      flowerSales: Array.isArray(snapshot.completedCalendarByTrack?.flowerSales) ? snapshot.completedCalendarByTrack.flowerSales : [],
       budtenderTd: Array.isArray(snapshot.completedCalendarByTrack?.budtenderTd) ? snapshot.completedCalendarByTrack.budtenderTd : [],
       budtenderTdJunior: Array.isArray(snapshot.completedCalendarByTrack?.budtenderTdJunior) ? snapshot.completedCalendarByTrack.budtenderTdJunior : [],
       budtenderJo: Array.isArray(snapshot.completedCalendarByTrack?.budtenderJo) ? snapshot.completedCalendarByTrack.budtenderJo : [],
@@ -1071,6 +1252,7 @@ export class AppController {
       producer: String(snapshot.weekStartByTrack?.producer ?? isoDate(currentWeekStart())),
       generalManager: String(snapshot.weekStartByTrack?.generalManager ?? isoDate(currentWeekStart())),
       joManager: String(snapshot.weekStartByTrack?.joManager ?? isoDate(currentWeekStart())),
+      flowerSales: String(snapshot.weekStartByTrack?.flowerSales ?? isoDate(currentWeekStart())),
       budtenderTd: String(snapshot.weekStartByTrack?.budtenderTd ?? isoDate(currentWeekStart())),
       budtenderTdJunior: String(snapshot.weekStartByTrack?.budtenderTdJunior ?? isoDate(currentWeekStart())),
       budtenderJo: String(snapshot.weekStartByTrack?.budtenderJo ?? isoDate(currentWeekStart())),
@@ -1084,6 +1266,7 @@ export class AppController {
           : [],
       ),
       joManager: new Set(Array.isArray(snapshot.notNeededThisWeekByTrack?.joManager) ? snapshot.notNeededThisWeekByTrack.joManager : []),
+      flowerSales: new Set(Array.isArray(snapshot.notNeededThisWeekByTrack?.flowerSales) ? snapshot.notNeededThisWeekByTrack.flowerSales : []),
       budtenderTd: new Set(Array.isArray(snapshot.notNeededThisWeekByTrack?.budtenderTd) ? snapshot.notNeededThisWeekByTrack.budtenderTd : []),
       budtenderTdJunior: new Set(Array.isArray(snapshot.notNeededThisWeekByTrack?.budtenderTdJunior) ? snapshot.notNeededThisWeekByTrack.budtenderTdJunior : []),
       budtenderJo: new Set(Array.isArray(snapshot.notNeededThisWeekByTrack?.budtenderJo) ? snapshot.notNeededThisWeekByTrack.budtenderJo : []),
@@ -1097,6 +1280,7 @@ export class AppController {
           : [],
       ),
       joManager: new Set(Array.isArray(snapshot.closingDoneByTrack?.joManager) ? snapshot.closingDoneByTrack.joManager : []),
+      flowerSales: new Set(Array.isArray(snapshot.closingDoneByTrack?.flowerSales) ? snapshot.closingDoneByTrack.flowerSales : []),
       budtenderTd: new Set(Array.isArray(snapshot.closingDoneByTrack?.budtenderTd) ? snapshot.closingDoneByTrack.budtenderTd : []),
       budtenderTdJunior: new Set(Array.isArray(snapshot.closingDoneByTrack?.budtenderTdJunior) ? snapshot.closingDoneByTrack.budtenderTdJunior : []),
       budtenderJo: new Set(Array.isArray(snapshot.closingDoneByTrack?.budtenderJo) ? snapshot.closingDoneByTrack.budtenderJo : []),
@@ -1137,6 +1321,7 @@ export class AppController {
         producer: Array.from(this.notNeededThisWeekByTrack.producer),
         generalManager: Array.from(this.notNeededThisWeekByTrack.generalManager),
         joManager: Array.from(this.notNeededThisWeekByTrack.joManager),
+        flowerSales: Array.from(this.notNeededThisWeekByTrack.flowerSales),
         budtenderTd: Array.from(this.notNeededThisWeekByTrack.budtenderTd),
         budtenderTdJunior: Array.from(this.notNeededThisWeekByTrack.budtenderTdJunior),
         budtenderJo: Array.from(this.notNeededThisWeekByTrack.budtenderJo),
@@ -1146,6 +1331,7 @@ export class AppController {
         producer: Array.from(this.closingDoneByTrack.producer),
         generalManager: Array.from(this.closingDoneByTrack.generalManager),
         joManager: Array.from(this.closingDoneByTrack.joManager),
+        flowerSales: Array.from(this.closingDoneByTrack.flowerSales),
         budtenderTd: Array.from(this.closingDoneByTrack.budtenderTd),
         budtenderTdJunior: Array.from(this.closingDoneByTrack.budtenderTdJunior),
         budtenderJo: Array.from(this.closingDoneByTrack.budtenderJo),
@@ -1218,6 +1404,86 @@ export class AppController {
     this.queueRuntimeSnapshotSave();
   }
 
+  addFlowerInventoryLot(input: {
+    strainName: string;
+    weightLbs: number;
+    suggestedRetailPrice: number;
+  }): boolean {
+    const strainName = input.strainName.trim();
+    if (!strainName) return false;
+    const weightLbs = Math.max(0.01, Number(input.weightLbs));
+    const suggestedRetailPrice = Math.max(0, Number(input.suggestedRetailPrice));
+    if (!Number.isFinite(weightLbs) || !Number.isFinite(suggestedRetailPrice)) return false;
+    this.flowerInventoryLots.push({
+      id: this.newId('flower-lot'),
+      strainName,
+      weightLbs: Number(weightLbs.toFixed(2)),
+      suggestedRetailPrice: Number(suggestedRetailPrice.toFixed(2)),
+      createdAtIso: new Date().toISOString(),
+      soldTo: null,
+      soldPricePerPound: null,
+      soldDateIso: null,
+    });
+    this.persistFlowerSalesInventoryToStorage();
+    this.notify();
+    return true;
+  }
+
+  recordFlowerLotSale(input: {
+    lotId: string;
+    soldTo: string;
+    soldPricePerPound: number;
+    soldDateIso: string;
+  }): boolean {
+    const idx = this.flowerInventoryLots.findIndex((lot) => lot.id === input.lotId);
+    if (idx < 0) return false;
+    const lot = this.flowerInventoryLots[idx];
+    if (lot.soldDateIso) return false;
+    const soldTo = input.soldTo.trim();
+    const soldDateIso = input.soldDateIso.trim();
+    const soldPricePerPound = Math.max(0, Number(input.soldPricePerPound));
+    if (!soldTo || !soldDateIso || !Number.isFinite(soldPricePerPound)) return false;
+    this.flowerInventoryLots[idx] = {
+      ...lot,
+      soldTo,
+      soldPricePerPound: Number(soldPricePerPound.toFixed(2)),
+      soldDateIso,
+    };
+    this.persistFlowerSalesInventoryToStorage();
+    this.notify();
+    return true;
+  }
+
+  addFlowerSalesAppointment(input: {
+    appointmentDateIso: string;
+    customerName: string;
+    notes: string;
+    strainName: string;
+    weightLbs: number | null;
+  }): boolean {
+    const appointmentDateIso = input.appointmentDateIso.trim();
+    const customerName = input.customerName.trim();
+    if (!appointmentDateIso || !customerName) return false;
+    const strainName = input.strainName.trim();
+    const rawWeight = input.weightLbs;
+    const normalizedWeight =
+      typeof rawWeight === 'number' && Number.isFinite(rawWeight) && rawWeight > 0
+        ? Number(rawWeight.toFixed(2))
+        : null;
+    this.flowerSalesAppointments.push({
+      id: this.newId('flower-appt'),
+      appointmentDateIso,
+      customerName,
+      notes: input.notes.trim(),
+      strainName,
+      weightLbs: normalizedWeight,
+      createdAtIso: new Date().toISOString(),
+    });
+    this.persistFlowerSalesAppointmentsToStorage();
+    this.notify();
+    return true;
+  }
+
   private async loadTrackFile(path: string, track: AssessmentTrack): Promise<void> {
     const response = await fetch(path);
     const decoded = (await response.json()) as SeedEntry[];
@@ -1250,6 +1516,7 @@ export class AppController {
       taskRecurrenceDateIso: '',
       taskRecurrenceEveryDays: null,
       taskRecurrenceMonthlyDay: null,
+      taskRecurrenceWeekdays: [],
       autoScheduledTasks: [],
     };
   }
@@ -1668,6 +1935,8 @@ export class AppController {
     const weekStart = parseIso(this.weekStartByTrack[track]) ?? currentWeekStart();
     const assignmentDate = new Date(weekStart);
     assignmentDate.setDate(weekStart.getDate() + safeDay + (input.forNextWeek ? 7 : 0));
+    const plannedTitle = flowerRowNumber ? `${input.template.title} (Row ${flowerRowNumber})` : input.template.title;
+    const plannedDateIso = isoDate(assignmentDate);
 
     let scheduledId = '';
 
@@ -1678,6 +1947,10 @@ export class AppController {
 
       const list = this.explicitNextByTrack[track];
       const idx = list.findIndex((t) => t.sourceTemplateId === input.template.id && !t.isFollowUp && !t.fromOverflow);
+      const existingId = idx < 0 ? undefined : list[idx].id;
+      if (this.isDuplicateTaskForDate(track, plannedTitle, plannedDateIso, existingId)) {
+        return { requestedDay: safeDay, assignedDay: safeDay };
+      }
       const lifecycleId =
         idx < 0
           ? (flowerRowNumber ? this.newId('rowlife') : undefined)
@@ -1686,7 +1959,7 @@ export class AppController {
         id: idx < 0 ? this.newId('next') : list[idx].id,
         track,
         sourceTemplateId: input.template.id,
-        title: flowerRowNumber ? `${input.template.title} (Row ${flowerRowNumber})` : input.template.title,
+        title: plannedTitle,
         room: input.template.room,
         category: input.template.category,
         priority: input.template.priority,
@@ -1703,7 +1976,7 @@ export class AppController {
         allowVoiceDictation: input.template.allowVoiceDictation,
         dataSubmitted: false,
         defaultDataEntryText: '',
-        scheduledDateIso: isoDate(assignmentDate),
+        scheduledDateIso: plannedDateIso,
         flowerRowNumber,
         flowerLifecycleId: lifecycleId,
       };
@@ -1716,6 +1989,10 @@ export class AppController {
       );
       const list = this.requestsByTrack[track];
       const idx = list.findIndex((r) => r.templateId === input.template.id && r.category !== 'Auto Follow-up');
+      const existingId = idx < 0 ? undefined : list[idx].id;
+      if (this.isDuplicateTaskForDate(track, plannedTitle, plannedDateIso, existingId)) {
+        return { requestedDay: safeDay, assignedDay: safeDay };
+      }
       const lifecycleId =
         idx < 0
           ? (flowerRowNumber ? this.newId('rowlife') : undefined)
@@ -1724,7 +2001,7 @@ export class AppController {
         id: idx < 0 ? this.newId('req') : list[idx].id,
         track,
         templateId: input.template.id,
-        title: flowerRowNumber ? `${input.template.title} (Row ${flowerRowNumber})` : input.template.title,
+        title: plannedTitle,
         room: input.template.room,
         category: input.template.category,
         priority: input.template.priority,
@@ -1741,7 +2018,7 @@ export class AppController {
         allowVoiceDictation: input.template.allowVoiceDictation,
         dataSubmitted: false,
         defaultDataEntryText: '',
-        scheduledDateIso: isoDate(assignmentDate),
+        scheduledDateIso: plannedDateIso,
         flowerRowNumber,
         flowerLifecycleId: lifecycleId,
       };
@@ -2179,6 +2456,28 @@ export class AppController {
     return this.dailyLoadsByTrack[this.activeTrack][dayIndex] ?? 0;
   }
 
+  private isDuplicateTaskForDate(
+    track: AssessmentTrack,
+    title: string,
+    scheduledDateIso: string,
+    excludeId?: string,
+  ): boolean {
+    const normalizedTitle = normalizeTaskTitle(title);
+    const fromRequests = this.requestsByTrack[track].some(
+      (task) =>
+        task.id !== excludeId
+        && task.scheduledDateIso === scheduledDateIso
+        && normalizeTaskTitle(task.title) === normalizedTitle,
+    );
+    if (fromRequests) return true;
+    return this.explicitNextByTrack[track].some(
+      (task) =>
+        task.id !== excludeId
+        && task.scheduledDateIso === scheduledDateIso
+        && normalizeTaskTitle(task.title) === normalizedTitle,
+    );
+  }
+
   tasksForDay(dayIndex: number): WeekTask[] {
     return this.thisWeekByTrack[this.activeTrack]
       .filter((task) => task.day === dayIndex)
@@ -2331,6 +2630,9 @@ export class AppController {
     const scheduledDate = new Date(weekStart);
     scheduledDate.setDate(weekStart.getDate() + preferredDay + (forNextWeek ? 7 : 0));
     const scheduledIso = isoDate(scheduledDate);
+    if (this.isDuplicateTaskForDate(track, title, scheduledIso)) {
+      return false;
+    }
     const templateId = this.newId('custom-template');
 
     if (forNextWeek) {
@@ -2407,13 +2709,15 @@ export class AppController {
       daysUntilDue: number | null;
       recurrence: 'none' | 'weekly' | 'monthly' | 'yearly';
       recurringWeekday: number | null;
+      recurringWeekdays?: number[];
       recurringDayOfMonth: number | null;
       recurringMonthOfYear: number | null;
     }>;
-    taskRecurrenceMode?: 'none' | 'calendarDate' | 'everyDays' | 'monthly';
+    taskRecurrenceMode?: 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly';
     taskRecurrenceDateIso?: string;
     taskRecurrenceEveryDays?: number | null;
     taskRecurrenceMonthlyDay?: number | null;
+    taskRecurrenceWeekdays?: number[];
     sendDataToSpecificEmployee?: boolean;
     dataRecipientRole?: UserRole;
     allowVoiceDictation?: boolean;
@@ -2442,7 +2746,8 @@ export class AppController {
       taskRecurrenceMode:
         input.taskRecurrenceMode === 'calendarDate' ||
         input.taskRecurrenceMode === 'everyDays' ||
-        input.taskRecurrenceMode === 'monthly'
+        input.taskRecurrenceMode === 'monthly' ||
+        input.taskRecurrenceMode === 'weekly'
           ? input.taskRecurrenceMode
           : 'none',
       taskRecurrenceDateIso: String(input.taskRecurrenceDateIso ?? '').trim(),
@@ -2454,8 +2759,12 @@ export class AppController {
         typeof input.taskRecurrenceMonthlyDay === 'number'
           ? Math.max(1, Math.min(31, Math.floor(input.taskRecurrenceMonthlyDay)))
           : null,
+      taskRecurrenceWeekdays: normalizeRecurringWeekdays(input.taskRecurrenceWeekdays),
       autoScheduledTasks: (input.autoScheduledTasks ?? [])
-        .map((task) => ({
+        .map((task) => {
+          const recurringWeekdays = normalizeRecurringWeekdays(task.recurringWeekdays, task.recurringWeekday);
+          return {
+          recurringWeekdays,
           title: task.title.trim(),
           recipientRole: task.recipientRole,
           hours: clampHours(task.hours),
@@ -2466,9 +2775,12 @@ export class AppController {
               : null,
           recurrence: normalizeRecurrence(task.recurrence),
           recurringWeekday:
-            typeof task.recurringWeekday === 'number'
-              ? Math.max(0, Math.min(6, Math.floor(task.recurringWeekday)))
-              : null,
+            recurringWeekdays[0]
+            ?? (
+              typeof task.recurringWeekday === 'number'
+                ? Math.max(0, Math.min(6, Math.floor(task.recurringWeekday)))
+                : null
+            ),
           recurringDayOfMonth:
             typeof task.recurringDayOfMonth === 'number'
               ? Math.max(1, Math.min(31, Math.floor(task.recurringDayOfMonth)))
@@ -2477,7 +2789,8 @@ export class AppController {
             typeof task.recurringMonthOfYear === 'number'
               ? Math.max(0, Math.min(11, Math.floor(task.recurringMonthOfYear)))
               : null,
-        }))
+        };
+      })
         .filter((task) => task.title)
         .sort(compareAutoScheduledTaskChronology)
         .slice(0, 7),
@@ -2504,7 +2817,8 @@ export class AppController {
       taskRecurrenceMode:
         updated.taskRecurrenceMode === 'calendarDate' ||
         updated.taskRecurrenceMode === 'everyDays' ||
-        updated.taskRecurrenceMode === 'monthly'
+        updated.taskRecurrenceMode === 'monthly' ||
+        updated.taskRecurrenceMode === 'weekly'
           ? updated.taskRecurrenceMode
           : 'none',
       taskRecurrenceDateIso: String(updated.taskRecurrenceDateIso ?? '').trim(),
@@ -2516,8 +2830,12 @@ export class AppController {
         typeof updated.taskRecurrenceMonthlyDay === 'number'
           ? Math.max(1, Math.min(31, Math.floor(updated.taskRecurrenceMonthlyDay)))
           : null,
+      taskRecurrenceWeekdays: normalizeRecurringWeekdays(updated.taskRecurrenceWeekdays),
       autoScheduledTasks: (updated.autoScheduledTasks ?? [])
-        .map((task) => ({
+        .map((task) => {
+          const recurringWeekdays = normalizeRecurringWeekdays(task.recurringWeekdays, task.recurringWeekday);
+          return {
+          recurringWeekdays,
           title: task.title.trim(),
           recipientRole: task.recipientRole,
           hours: clampHours(task.hours),
@@ -2528,9 +2846,12 @@ export class AppController {
               : null,
           recurrence: normalizeRecurrence(task.recurrence),
           recurringWeekday:
-            typeof task.recurringWeekday === 'number'
-              ? Math.max(0, Math.min(6, Math.floor(task.recurringWeekday)))
-              : null,
+            recurringWeekdays[0]
+            ?? (
+              typeof task.recurringWeekday === 'number'
+                ? Math.max(0, Math.min(6, Math.floor(task.recurringWeekday)))
+                : null
+            ),
           recurringDayOfMonth:
             typeof task.recurringDayOfMonth === 'number'
               ? Math.max(1, Math.min(31, Math.floor(task.recurringDayOfMonth)))
@@ -2539,7 +2860,8 @@ export class AppController {
             typeof task.recurringMonthOfYear === 'number'
               ? Math.max(0, Math.min(11, Math.floor(task.recurringMonthOfYear)))
               : null,
-        }))
+        };
+      })
         .filter((task) => task.title)
         .sort(compareAutoScheduledTaskChronology)
         .slice(0, 7),
@@ -2657,16 +2979,17 @@ export class AppController {
       if (
         template.taskRecurrenceMode !== 'calendarDate' &&
         template.taskRecurrenceMode !== 'everyDays' &&
-        template.taskRecurrenceMode !== 'monthly'
+        template.taskRecurrenceMode !== 'monthly' &&
+        template.taskRecurrenceMode !== 'weekly'
       ) {
         continue;
       }
 
-      let dueDate: Date | null = null;
+      const dueDates: Date[] = [];
       if (template.taskRecurrenceMode === 'calendarDate') {
         const configured = parseIso(template.taskRecurrenceDateIso);
         if (configured && configured >= weekStart && configured < weekEnd) {
-          dueDate = configured;
+          dueDates.push(configured);
         }
       } else if (template.taskRecurrenceMode === 'everyDays') {
         const anchor = parseIso(template.taskRecurrenceDateIso) ?? weekStart;
@@ -2679,7 +3002,7 @@ export class AppController {
         const candidate = new Date(anchor);
         candidate.setDate(anchor.getDate() + steps * interval);
         if (candidate >= weekStart && candidate < weekEnd) {
-          dueDate = candidate;
+          dueDates.push(candidate);
         }
       } else if (template.taskRecurrenceMode === 'monthly') {
         const day =
@@ -2692,41 +3015,51 @@ export class AppController {
           const lastDay = new Date(monthRef.getFullYear(), monthRef.getMonth() + 1, 0).getDate();
           const candidate = new Date(monthRef.getFullYear(), monthRef.getMonth(), Math.min(day, lastDay));
           if (candidate >= weekStart && candidate < weekEnd) {
-            dueDate = candidate;
+            dueDates.push(candidate);
             break;
+          }
+        }
+      } else if (template.taskRecurrenceMode === 'weekly') {
+        const weekdays = normalizeRecurringWeekdays(template.taskRecurrenceWeekdays);
+        for (const weekday of weekdays) {
+          const candidate = nextOrSameWeekday(weekStart, weekday);
+          if (candidate >= weekStart && candidate < weekEnd) {
+            dueDates.push(candidate);
           }
         }
       }
 
-      if (!dueDate) continue;
-      const dueIso = isoDate(dueDate);
-      const dedupeKey = `${template.id}|${dueIso}`;
-      if (existingKeys.has(dedupeKey)) continue;
-      existingKeys.add(dedupeKey);
-      this.requestsByTrack[track].push({
-        id: this.newId('req'),
-        track,
-        templateId: template.id,
-        title: template.title,
-        room: template.room,
-        category: template.category,
-        priority: template.priority,
-        estimatedHours: template.defaultHours,
-        preferredDay: workdayIndex(dueDate),
-        createdAt: new Date().toISOString(),
-        completed: false,
-        followUpGenerated: false,
-        sendCompletionMessage: template.sendCompletionMessage,
-        completionNotifyRole: template.completionNotifyRole,
-        completionActionRequiredByDefault: template.completionActionRequiredByDefault,
-        sendDataToSpecificEmployee: template.sendDataToSpecificEmployee,
-        dataRecipientRole: template.dataRecipientRole,
-        allowVoiceDictation: template.allowVoiceDictation,
-        dataSubmitted: false,
-        defaultDataEntryText: '',
-        scheduledDateIso: dueIso,
-        flowerRowNumber: null,
-      });
+      if (dueDates.length === 0) continue;
+      for (const dueDate of dueDates) {
+        const dueIso = isoDate(dueDate);
+        const dedupeKey = `${template.id}|${dueIso}`;
+        if (existingKeys.has(dedupeKey)) continue;
+        existingKeys.add(dedupeKey);
+        this.requestsByTrack[track].push({
+          id: this.newId('req'),
+          track,
+          templateId: template.id,
+          title: template.title,
+          room: template.room,
+          category: template.category,
+          priority: template.priority,
+          estimatedHours: template.defaultHours,
+          preferredDay: workdayIndex(dueDate),
+          createdAt: new Date().toISOString(),
+          completed: false,
+          followUpGenerated: false,
+          sendCompletionMessage: template.sendCompletionMessage,
+          completionNotifyRole: template.completionNotifyRole,
+          completionActionRequiredByDefault: template.completionActionRequiredByDefault,
+          sendDataToSpecificEmployee: template.sendDataToSpecificEmployee,
+          dataRecipientRole: template.dataRecipientRole,
+          allowVoiceDictation: template.allowVoiceDictation,
+          dataSubmitted: false,
+          defaultDataEntryText: '',
+          scheduledDateIso: dueIso,
+          flowerRowNumber: null,
+        });
+      }
     }
   }
 
@@ -2823,6 +3156,7 @@ export class AppController {
         typeof linked.recurringWeekday === 'number'
           ? Math.max(0, Math.min(6, Math.floor(linked.recurringWeekday)))
           : null;
+      const recurringWeekdays = normalizeRecurringWeekdays(linked.recurringWeekdays, recurringWeekday);
       const recurringDayOfMonth =
         typeof linked.recurringDayOfMonth === 'number'
           ? Math.max(1, Math.min(31, Math.floor(linked.recurringDayOfMonth)))
@@ -2836,28 +3170,32 @@ export class AppController {
         !== null
         ? new Date(assignmentDate.getTime() + configuredDays * 86400000)
         : null;
-      let recurringDate: Date | null = null;
-      if (recurrence === 'weekly' && recurringWeekday !== null) {
-        recurringDate = nextOrSameWeekday(assignmentDate, recurringWeekday);
+      let targetDates: Date[] = [];
+      if (configuredDueDate) {
+        targetDates = [configuredDueDate];
+      } else if (offsetDate) {
+        targetDates = [offsetDate];
+      } else if (recurrence === 'weekly') {
+        const weeklyDays = recurringWeekdays.length > 0
+          ? recurringWeekdays
+          : recurringWeekday !== null
+            ? [recurringWeekday]
+            : [];
+        targetDates = weeklyDays.map((weekday) => nextOrSameWeekday(assignmentDate, weekday));
       } else if (recurrence === 'monthly' && recurringDayOfMonth !== null) {
-        recurringDate = nextOrSameMonthlyDate(assignmentDate, recurringDayOfMonth);
+        targetDates = [nextOrSameMonthlyDate(assignmentDate, recurringDayOfMonth)];
       } else if (
         recurrence === 'yearly' &&
         recurringMonthOfYear !== null &&
         recurringDayOfMonth !== null
       ) {
-        recurringDate = nextOrSameYearlyDate(
+        targetDates = [nextOrSameYearlyDate(
           assignmentDate,
           recurringMonthOfYear,
           recurringDayOfMonth,
-        );
+        )];
       }
-      const targetDate = configuredDueDate ?? offsetDate ?? recurringDate ?? assignmentDate;
-      const weekStart = parseIso(this.weekStartByTrack[targetTrack]) ?? currentWeekStart();
-      const nextWeekStart = new Date(weekStart);
-      nextWeekStart.setDate(weekStart.getDate() + 7);
-      const inCurrentWeek = targetDate >= weekStart && targetDate < nextWeekStart;
-      const preferredDay = workdayIndex(targetDate);
+      if (targetDates.length === 0) targetDates = [assignmentDate];
       const payload = {
         track: targetTrack,
         templateId: template.id,
@@ -2876,27 +3214,35 @@ export class AppController {
           defaultDataEntryText: '',
         };
 
-      if (inCurrentWeek) {
-        this.requestsByTrack[targetTrack].push({
-          id: this.newId('req'),
-          ...payload,
-          preferredDay,
-          createdAt: new Date().toISOString(),
-          completed: false,
-          followUpGenerated: false,
-          scheduledDateIso: isoDate(targetDate),
-        });
-      } else {
-        this.explicitNextByTrack[targetTrack].push({
-          id: this.newId('next'),
-          sourceTemplateId: template.id,
-          ...payload,
-          day: preferredDay,
-          completed: false,
-          fromOverflow: false,
-          isFollowUp: false,
-          scheduledDateIso: isoDate(targetDate),
-        });
+      for (const targetDate of targetDates) {
+        const weekStart = parseIso(this.weekStartByTrack[targetTrack]) ?? currentWeekStart();
+        const nextWeekStart = new Date(weekStart);
+        nextWeekStart.setDate(weekStart.getDate() + 7);
+        const inCurrentWeek = targetDate >= weekStart && targetDate < nextWeekStart;
+        const preferredDay = workdayIndex(targetDate);
+
+        if (inCurrentWeek) {
+          this.requestsByTrack[targetTrack].push({
+            id: this.newId('req'),
+            ...payload,
+            preferredDay,
+            createdAt: new Date().toISOString(),
+            completed: false,
+            followUpGenerated: false,
+            scheduledDateIso: isoDate(targetDate),
+          });
+        } else {
+          this.explicitNextByTrack[targetTrack].push({
+            id: this.newId('next'),
+            sourceTemplateId: template.id,
+            ...payload,
+            day: preferredDay,
+            completed: false,
+            fromOverflow: false,
+            isFollowUp: false,
+            scheduledDateIso: isoDate(targetDate),
+          });
+        }
       }
     }
     if (isRoFilterTaskTitle(template.title)) {
@@ -2930,6 +3276,9 @@ export class AppController {
     targetDate: Date;
     flowerRowNumber?: number | null;
     flowerLifecycleId?: string;
+    sendDataToSpecificEmployee?: boolean;
+    dataRecipientRole?: UserRole;
+    completionActionRequiredByDefault?: boolean;
   }): void {
     const weekStart = parseIso(this.weekStartByTrack[input.track]) ?? currentWeekStart();
     const nextWeekStart = new Date(weekStart);
@@ -2937,13 +3286,18 @@ export class AppController {
     const inCurrentWeek = input.targetDate >= weekStart && input.targetDate < nextWeekStart;
     const preferredDay = workdayIndex(input.targetDate);
     const safeRow = normalizeFlowerRowNumber(input.flowerRowNumber);
+    const title = input.title.trim();
+    const dateIso = isoDate(input.targetDate);
+    if (this.isDuplicateTaskForDate(input.track, title, dateIso)) {
+      return;
+    }
 
     if (inCurrentWeek) {
       this.requestsByTrack[input.track].push({
         id: this.newId('req'),
         track: input.track,
         templateId: input.templateId,
-        title: input.title.trim(),
+        title,
         room: input.room.trim(),
         category: input.category.trim(),
         priority: clampPriority(input.priority),
@@ -2954,13 +3308,13 @@ export class AppController {
         followUpGenerated: false,
         sendCompletionMessage: false,
         completionNotifyRole: 'generalManager',
-        completionActionRequiredByDefault: true,
-        sendDataToSpecificEmployee: false,
-        dataRecipientRole: 'producer',
+        completionActionRequiredByDefault: input.completionActionRequiredByDefault ?? true,
+        sendDataToSpecificEmployee: Boolean(input.sendDataToSpecificEmployee),
+        dataRecipientRole: input.dataRecipientRole ?? 'producer',
         allowVoiceDictation: true,
         dataSubmitted: false,
         defaultDataEntryText: '',
-        scheduledDateIso: isoDate(input.targetDate),
+        scheduledDateIso: dateIso,
         flowerRowNumber: safeRow,
         flowerLifecycleId: input.flowerLifecycleId,
       });
@@ -2971,7 +3325,7 @@ export class AppController {
       id: this.newId('next'),
       track: input.track,
       sourceTemplateId: input.templateId,
-      title: input.title.trim(),
+      title,
       room: input.room.trim(),
       category: input.category.trim(),
       priority: clampPriority(input.priority),
@@ -2982,13 +3336,13 @@ export class AppController {
       isFollowUp: false,
       sendCompletionMessage: false,
       completionNotifyRole: 'generalManager',
-      completionActionRequiredByDefault: true,
-      sendDataToSpecificEmployee: false,
-      dataRecipientRole: 'producer',
+      completionActionRequiredByDefault: input.completionActionRequiredByDefault ?? true,
+      sendDataToSpecificEmployee: Boolean(input.sendDataToSpecificEmployee),
+      dataRecipientRole: input.dataRecipientRole ?? 'producer',
       allowVoiceDictation: true,
       dataSubmitted: false,
       defaultDataEntryText: '',
-      scheduledDateIso: isoDate(input.targetDate),
+      scheduledDateIso: dateIso,
       flowerRowNumber: safeRow,
       flowerLifecycleId: input.flowerLifecycleId,
     });
@@ -3006,28 +3360,51 @@ export class AppController {
       const lifecycleId = request.flowerLifecycleId ?? request.id;
       const track: AssessmentTrack = 'producer';
       touched.add(track);
-      const followUps: Array<{ offsetDays: number; title: string; hours: number }> = [
-        { offsetDays: 14, title: 'Prune 30% of leaves off', hours: 2 },
-        { offsetDays: 30, title: 'pH reading of the soil for this row', hours: 1.5 },
-        { offsetDays: 55, title: 'Take soil samples, collect soil samples, mail to Logan Labs', hours: 2 },
-        { offsetDays: 60, title: 'Remove all leaves', hours: 2 },
-        { offsetDays: 63, title: 'Harvest that particular row', hours: 3 },
-        { offsetDays: 67, title: 'Reamend that particular row with fresh nutrients and amendments', hours: 2 },
+      const followUps: Array<{ offsetDays: number; title: string; hours: number; priority: number }> = [
+        {
+          offsetDays: 0,
+          title: 'Send metric tags for plants in flower room to GM',
+          hours: 0.25,
+          priority: 1,
+        },
+        {
+          offsetDays: 21,
+          title: 'Remove bottom branches and unnecessary leaves from plant',
+          hours: 0.5,
+          priority: 1,
+        },
+        {
+          offsetDays: 60,
+          title: 'De-leaf all leaves',
+          hours: 2,
+          priority: 1,
+        },
+        {
+          offsetDays: 65,
+          title: 'Harvest',
+          hours: 8,
+          priority: 1,
+        },
       ];
+      followUps.sort((a, b) => a.offsetDays - b.offsetDays);
       for (const followUp of followUps) {
         const targetDate = new Date(completionDate);
         targetDate.setDate(completionDate.getDate() + followUp.offsetDays);
+        const isMetricTagTask = normalizeTaskTitle(followUp.title).includes('send metric tags');
         this.scheduleManualLinkedTask({
           track,
           templateId: template.id,
           title: `${followUp.title} (Row ${row})`,
           room: 'FLOWER ROOM',
           category: 'Linked Auto Task',
-          priority: 1,
+          priority: followUp.priority,
           hours: followUp.hours,
           targetDate,
           flowerRowNumber: row,
           flowerLifecycleId: lifecycleId,
+          sendDataToSpecificEmployee: isMetricTagTask,
+          dataRecipientRole: isMetricTagTask ? 'generalManager' : 'producer',
+          completionActionRequiredByDefault: true,
         });
       }
     }
@@ -3308,18 +3685,251 @@ export class AppController {
               changed = true;
             }
           }
+          if (update.taskRecurrenceMode) {
+            if (next.taskRecurrenceMode !== update.taskRecurrenceMode) {
+              next.taskRecurrenceMode = update.taskRecurrenceMode;
+              changed = true;
+            }
+            const desiredDateIso = String(update.taskRecurrenceDateIso ?? '').trim();
+            const desiredEveryDays =
+              typeof update.taskRecurrenceEveryDays === 'number'
+                ? Math.max(1, Math.min(365, Math.floor(update.taskRecurrenceEveryDays)))
+                : null;
+            const desiredMonthlyDay =
+              typeof update.taskRecurrenceMonthlyDay === 'number'
+                ? Math.max(1, Math.min(31, Math.floor(update.taskRecurrenceMonthlyDay)))
+                : null;
+            const desiredWeekdays = normalizeRecurringWeekdays(update.taskRecurrenceWeekdays);
+            if (next.taskRecurrenceDateIso !== desiredDateIso) {
+              next.taskRecurrenceDateIso = desiredDateIso;
+              changed = true;
+            }
+            if (next.taskRecurrenceEveryDays !== desiredEveryDays) {
+              next.taskRecurrenceEveryDays = desiredEveryDays;
+              changed = true;
+            }
+            if (next.taskRecurrenceMonthlyDay !== desiredMonthlyDay) {
+              next.taskRecurrenceMonthlyDay = desiredMonthlyDay;
+              changed = true;
+            }
+            if (
+              normalizeRecurringWeekdays(next.taskRecurrenceWeekdays).join(',') !== desiredWeekdays.join(',')
+            ) {
+              next.taskRecurrenceWeekdays = desiredWeekdays;
+              changed = true;
+            }
+          }
           migrated.push(next);
           continue;
         }
       }
       migrated.push(template);
     }
-    this.templates = migrated;
+    const filteredDuplicates: AssessmentTemplate[] = [];
+    let removedProducerDuplicate = false;
+    let sawVegPlantDeath = false;
+    for (const template of migrated) {
+      if (
+        template.track === 'producer'
+        && producerRoomBucket(template.room) === 'veg'
+        && normalizeTaskTitle(template.title) === normalizeTaskTitle('Plant death report tag numbers list sent to TD Manager ZB')
+      ) {
+        if (sawVegPlantDeath) {
+          removedProducerDuplicate = true;
+          continue;
+        }
+        sawVegPlantDeath = true;
+      }
+      filteredDuplicates.push(template);
+    }
+    if (removedProducerDuplicate) {
+      changed = true;
+    }
+    this.templates = filteredDuplicates;
     return changed;
   }
 
   private ensureRequiredTemplates(): boolean {
-    const required = [
+    const legacyChecklistTitles = new Set([
+      'td opening duties checklist',
+      'td closing duties checklist',
+      'td budtender daily floor tasks',
+      'j-o opening duties checklist',
+      'j-o closing duties checklist',
+      'j-o budtender daily floor tasks',
+    ]);
+    const beforeLegacyCleanup = this.templates.length;
+    this.templates = this.templates.filter((template) => !legacyChecklistTitles.has(template.title.trim().toLowerCase()));
+    const removedLegacyPlaceholders = beforeLegacyCleanup !== this.templates.length;
+
+    const retailManagerTaskSeeds: Array<{ title: string; frequency: string }> = [
+      { title: 'Clear out blue tags in METRC', frequency: 'Daily' },
+      { title: 'Take in orders as needed', frequency: 'Daily' },
+      { title: 'Customer issues addressed', frequency: 'Daily' },
+      { title: 'Garbage outside of building', frequency: 'Daily' },
+      { title: 'Check cameras EOD', frequency: 'Every Other Day' },
+      { title: 'Water plants', frequency: '1x/Wk' },
+      { title: 'Check Google Calendar for scheduling', frequency: '1x/Wk' },
+      { title: 'Hands on all paraphernalia and move around as needed', frequency: '1x/Wk' },
+      { title: 'Water inside plants', frequency: '1x/Wk' },
+      { title: 'Verify each product', frequency: '1x per Month' },
+      { title: 'Weight flower', frequency: '1x per Month' },
+      { title: 'Trash and recycling', frequency: '1x per Month' },
+      { title: 'Product intake in METRC', frequency: 'As Needed' },
+      { title: 'Create product in Dutchie', frequency: 'As Needed' },
+      { title: 'Reconcile METRC and Dutchie corrections', frequency: 'As Needed' },
+      { title: 'Place MJ orders with vendors', frequency: '15th of each month' },
+      { title: 'Essential items: exit bags, stickers, latex gloves', frequency: '1x per Month' },
+      { title: 'Paraphernalia order', frequency: 'Every 2 Months' },
+      { title: 'Order drams', frequency: 'Every 2 Months' },
+      { title: 'Ordering supplies as needed', frequency: 'Every 2 Months' },
+      { title: 'Order paraphernalia, drams, cones, tubes', frequency: 'Every 2 Months' },
+    ];
+
+    const joTdSharedDaily: Array<{ title: string; frequency: string }> = [
+      { title: 'Summary of the day: voice dictation tab', frequency: 'Daily' },
+      { title: 'Products that are selling out fast', frequency: 'Daily' },
+      { title: 'Product request', frequency: 'Daily' },
+      { title: 'Supplies request', frequency: 'Daily' },
+      { title: 'Inventory issue', frequency: 'Daily' },
+      { title: 'Customer concern', frequency: 'Daily' },
+      { title: 'Sweep retail and customer bathroom floors (mop when needed)', frequency: 'Daily' },
+      { title: 'Check/refill paper towel and toilet paper dispensers', frequency: 'Daily' },
+      { title: 'Clean display cases and countertops', frequency: 'Daily' },
+      { title: 'Check parking lot/alley for trash', frequency: 'Daily' },
+      { title: 'Clean scales and scale cups with alcohol', frequency: 'Daily' },
+      { title: 'Sweep retail support', frequency: 'Daily' },
+      { title: 'Sweep/shovel/salt outside as needed', frequency: 'Daily' },
+      { title: 'Clean mirrors/front door', frequency: '1x Week' },
+      { title: 'Sweep/mop bathrooms', frequency: '1x Week' },
+      { title: 'Sweep/mop retail floor', frequency: '1x Week' },
+      { title: 'Sweep/mop retail support', frequency: '1x Week' },
+      { title: 'Clean tables', frequency: '1x Week' },
+      { title: 'Dust retail/support', frequency: '1x Week' },
+      { title: 'Clean/bleach employee toilet/sink', frequency: '1x Week' },
+      { title: 'Clean/bleach customer toilet/sink', frequency: '1x Week' },
+      { title: 'Feng shui all merchandise', frequency: 'Misc' },
+      { title: 'Weed', frequency: 'Misc' },
+      { title: 'Pick up outside trash', frequency: 'Misc' },
+      { title: 'Water', frequency: 'Misc' },
+      { title: 'Sweep', frequency: 'Misc' },
+      { title: 'Dust', frequency: 'Misc' },
+      { title: 'Clean retail support area', frequency: 'Misc' },
+      { title: 'Wipe down doors and knobs', frequency: 'Misc' },
+      { title: 'Plant pruning, wiping leaves, watering', frequency: 'Misc' },
+      { title: 'Clean glass bongs', frequency: 'Misc' },
+    ];
+
+    const tdOnlyDaily: Array<{ title: string; frequency: string }> = [
+      { title: 'Get change from the bank for the till', frequency: 'Daily' },
+    ];
+
+    const openChecklist: string[] = [
+      'Arrive',
+      'Unlock back door',
+      'Disarm alarm',
+      'Sign in',
+      'Turn on lights',
+      'Open window blinds',
+      'Unlock walk-in vault',
+      'Set up products from carts',
+      'Sign in on POS/start cash drawer',
+      'Restock products',
+      'At 10:00 turn on "Open" sign and unlock door',
+    ];
+
+    const closeChecklist: string[] = [
+      'Lock door',
+      'Turn off "Open" sign',
+      'Load product onto carts',
+      'Store product in walk-in vault',
+      'Lock vault',
+      'Count drawer cash and deposit in cash safe',
+      'Empty small trashcans',
+      'Spot check customer bathrooms',
+      'Lock all internal doors',
+      'Sign out',
+      'Activate alarm',
+      'Leave building by way of back door',
+      'Make sure back door is locked',
+    ];
+
+    const buildRetailManagerSeeds = (): Array<{
+      track: AssessmentTrack;
+      title: string;
+      room: string;
+      category: string;
+      priority: number;
+      defaultHours: number;
+    }> =>
+      retailManagerTaskSeeds.map((task) => ({
+        track: 'joManager' as AssessmentTrack,
+        title: task.title,
+        room: 'Retail Manager',
+        category: task.frequency,
+        priority: 2,
+        defaultHours: task.frequency === 'Daily' ? 0.25 : 0.5,
+      }));
+
+    const buildBudtenderSeeds = (
+      track: AssessmentTrack,
+      room: string,
+      includeTdOnly: boolean,
+    ): Array<{
+      track: AssessmentTrack;
+      title: string;
+      room: string;
+      category: string;
+      priority: number;
+      defaultHours: number;
+    }> => {
+      const core = includeTdOnly ? [...joTdSharedDaily, ...tdOnlyDaily] : [...joTdSharedDaily];
+
+      const dutySeeds = core.map((task) => ({
+        track,
+        title: task.title,
+        room,
+        category: task.frequency,
+        priority: task.frequency === 'Daily' ? 1 : 2,
+        defaultHours: task.frequency === 'Daily' ? 0.25 : 0.5,
+      }));
+
+      const openSeeds = openChecklist.map((title) => ({
+        track,
+        title,
+        room,
+        category: 'OPEN',
+        priority: 1,
+        defaultHours: 5 / 60,
+      }));
+
+      const closeSeeds = closeChecklist.map((title) => ({
+        track,
+        title,
+        room,
+        category: 'CLOSE',
+        priority: 1,
+        defaultHours: 5 / 60,
+      }));
+
+      return [...dutySeeds, ...openSeeds, ...closeSeeds];
+    };
+
+    type RequiredTemplateSeed = {
+      track: AssessmentTrack;
+      title: string;
+      room: string;
+      category: string;
+      priority: number;
+      defaultHours: number;
+      taskRecurrenceMode?: 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly';
+      taskRecurrenceDateIso?: string;
+      taskRecurrenceEveryDays?: number | null;
+      taskRecurrenceMonthlyDay?: number | null;
+      taskRecurrenceWeekdays?: number[];
+    };
+
+    const required: RequiredTemplateSeed[] = [
       {
         track: 'producer' as AssessmentTrack,
         title: 'pH Soil Mother, send data to GM/CEO',
@@ -3327,6 +3937,8 @@ export class AppController {
         category: 'Mothers Inspection',
         priority: 1,
         defaultHours: 30 / 60,
+        taskRecurrenceMode: 'monthly' as const,
+        taskRecurrenceMonthlyDay: 2,
       },
       {
         track: 'producer' as AssessmentTrack,
@@ -3383,6 +3995,16 @@ export class AppController {
         category: 'Other',
         priority: 2,
         defaultHours: 5 / 60,
+      },
+      {
+        track: 'producer' as AssessmentTrack,
+        title: 'Clean the office',
+        room: 'OTHER',
+        category: 'Other',
+        priority: 2,
+        defaultHours: 30 / 60,
+        taskRecurrenceMode: 'weekly' as const,
+        taskRecurrenceWeekdays: [3],
       },
       {
         track: 'generalManager' as AssessmentTrack,
@@ -3512,114 +4134,53 @@ export class AppController {
         priority: 1,
         defaultHours: 2,
       },
-      {
-        track: 'budtenderTd' as AssessmentTrack,
-        title: 'TD opening duties checklist',
-        room: 'Retail TD',
-        category: 'Daily Opening Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderTd' as AssessmentTrack,
-        title: 'TD closing duties checklist',
-        room: 'Retail TD',
-        category: 'Daily Closing Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderTd' as AssessmentTrack,
-        title: 'TD budtender daily floor tasks',
-        room: 'Retail TD',
-        category: 'Daily Duties',
-        priority: 2,
-        defaultHours: 1,
-      },
-      {
-        track: 'budtenderTdJunior' as AssessmentTrack,
-        title: 'TD opening duties checklist',
-        room: 'Retail TD',
-        category: 'Daily Opening Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderTdJunior' as AssessmentTrack,
-        title: 'TD closing duties checklist',
-        room: 'Retail TD',
-        category: 'Daily Closing Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderTdJunior' as AssessmentTrack,
-        title: 'TD budtender daily floor tasks',
-        room: 'Retail TD',
-        category: 'Daily Duties',
-        priority: 2,
-        defaultHours: 1,
-      },
-      {
-        track: 'budtenderJo' as AssessmentTrack,
-        title: 'J-O opening duties checklist',
-        room: 'Retail JO',
-        category: 'Daily Opening Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderJo' as AssessmentTrack,
-        title: 'J-O closing duties checklist',
-        room: 'Retail JO',
-        category: 'Daily Closing Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderJo' as AssessmentTrack,
-        title: 'J-O budtender daily floor tasks',
-        room: 'Retail JO',
-        category: 'Daily Duties',
-        priority: 2,
-        defaultHours: 1,
-      },
-      {
-        track: 'budtenderJoJunior' as AssessmentTrack,
-        title: 'J-O opening duties checklist',
-        room: 'Retail JO',
-        category: 'Daily Opening Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderJoJunior' as AssessmentTrack,
-        title: 'J-O closing duties checklist',
-        room: 'Retail JO',
-        category: 'Daily Closing Duties',
-        priority: 1,
-        defaultHours: 0.75,
-      },
-      {
-        track: 'budtenderJoJunior' as AssessmentTrack,
-        title: 'J-O budtender daily floor tasks',
-        room: 'Retail JO',
-        category: 'Daily Duties',
-        priority: 2,
-        defaultHours: 1,
-      },
+      ...buildRetailManagerSeeds(),
+      ...buildBudtenderSeeds('budtenderTd', 'Retail TD', true),
+      ...buildBudtenderSeeds('budtenderTdJunior', 'Retail TD', true),
+      ...buildBudtenderSeeds('budtenderJo', 'Retail JO', false),
+      ...buildBudtenderSeeds('budtenderJoJunior', 'Retail JO', false),
     ];
 
-    let added = false;
+    let added = removedLegacyPlaceholders;
     for (const template of required) {
-      const exists = this.templates.some(
+      const existing = this.templates.find(
         (item) =>
           item.track === template.track &&
           item.title.trim().toLowerCase() === template.title.toLowerCase() &&
           item.room.trim().toLowerCase() === template.room.toLowerCase() &&
           item.category.trim().toLowerCase() === template.category.toLowerCase(),
       );
-      if (exists) continue;
+      if (existing) {
+        const desiredMode = template.taskRecurrenceMode ?? 'none';
+        const desiredDateIso = String(template.taskRecurrenceDateIso ?? '').trim();
+        const desiredEveryDays =
+          typeof template.taskRecurrenceEveryDays === 'number'
+            ? Math.max(1, Math.min(365, Math.floor(template.taskRecurrenceEveryDays)))
+            : null;
+        const desiredMonthlyDay =
+          typeof template.taskRecurrenceMonthlyDay === 'number'
+            ? Math.max(1, Math.min(31, Math.floor(template.taskRecurrenceMonthlyDay)))
+            : null;
+        const desiredWeekdays = normalizeRecurringWeekdays(template.taskRecurrenceWeekdays);
+        if (
+          existing.taskRecurrenceMode !== desiredMode
+          || existing.taskRecurrenceDateIso !== desiredDateIso
+          || existing.taskRecurrenceEveryDays !== desiredEveryDays
+          || existing.taskRecurrenceMonthlyDay !== desiredMonthlyDay
+          || normalizeRecurringWeekdays(existing.taskRecurrenceWeekdays).join(',') !== desiredWeekdays.join(',')
+        ) {
+          existing.taskRecurrenceMode = desiredMode;
+          existing.taskRecurrenceDateIso = desiredDateIso;
+          existing.taskRecurrenceEveryDays = desiredEveryDays;
+          existing.taskRecurrenceMonthlyDay = desiredMonthlyDay;
+          existing.taskRecurrenceWeekdays = desiredWeekdays;
+          if (desiredMode !== 'calendarDate') existing.taskRecurrenceDateIso = '';
+          if (desiredMode !== 'everyDays') existing.taskRecurrenceEveryDays = null;
+          if (desiredMode !== 'weekly') existing.taskRecurrenceWeekdays = [];
+          added = true;
+        }
+        continue;
+      }
       added = true;
       this.templates.push({
         id: this.newId('seed'),
@@ -3640,10 +4201,17 @@ export class AppController {
         sendDataToSpecificEmployee: false,
         dataRecipientRole: 'producer',
         allowVoiceDictation: true,
-        taskRecurrenceMode: 'none',
-        taskRecurrenceDateIso: '',
-        taskRecurrenceEveryDays: null,
-        taskRecurrenceMonthlyDay: null,
+        taskRecurrenceMode: template.taskRecurrenceMode ?? 'none',
+        taskRecurrenceDateIso: String(template.taskRecurrenceDateIso ?? '').trim(),
+        taskRecurrenceEveryDays:
+          typeof template.taskRecurrenceEveryDays === 'number'
+            ? Math.max(1, Math.min(365, Math.floor(template.taskRecurrenceEveryDays)))
+            : null,
+        taskRecurrenceMonthlyDay:
+          typeof template.taskRecurrenceMonthlyDay === 'number'
+            ? Math.max(1, Math.min(31, Math.floor(template.taskRecurrenceMonthlyDay)))
+            : null,
+        taskRecurrenceWeekdays: normalizeRecurringWeekdays(template.taskRecurrenceWeekdays),
         autoScheduledTasks: [],
       });
     }
@@ -3665,6 +4233,7 @@ export class AppController {
         template.taskRecurrenceDateIso ?? '',
         String(template.taskRecurrenceEveryDays ?? ''),
         String(template.taskRecurrenceMonthlyDay ?? ''),
+        normalizeRecurringWeekdays(template.taskRecurrenceWeekdays).join(','),
       ].join('|');
       if (seen.has(key)) {
         continue;
@@ -3690,6 +4259,14 @@ export class AppController {
           ? rawTasks
               .map((task) => {
                 const taskRecord = asRecord(task);
+                const recurringWeekday =
+                  typeof taskRecord.recurringWeekday === 'number'
+                    ? Math.max(0, Math.min(6, Math.floor(taskRecord.recurringWeekday)))
+                    : null;
+                const recurringWeekdays = normalizeRecurringWeekdays(
+                  taskRecord.recurringWeekdays,
+                  recurringWeekday,
+                );
                 return {
                   title: String(taskRecord.title ?? '').trim(),
                   recipientRole: (taskRecord.recipientRole ?? 'generalManager') as UserRole,
@@ -3702,13 +4279,11 @@ export class AppController {
                   recurrence:
                     normalizeRecurrence(taskRecord.recurrence) !== 'none'
                       ? normalizeRecurrence(taskRecord.recurrence)
-                      : typeof taskRecord.recurringWeekday === 'number'
+                      : recurringWeekday !== null || recurringWeekdays.length > 0
                         ? 'weekly'
                         : 'none',
-                  recurringWeekday:
-                    typeof taskRecord.recurringWeekday === 'number'
-                      ? Math.max(0, Math.min(6, Math.floor(taskRecord.recurringWeekday)))
-                      : null,
+                  recurringWeekday: recurringWeekdays[0] ?? recurringWeekday,
+                  recurringWeekdays,
                   recurringDayOfMonth:
                     typeof taskRecord.recurringDayOfMonth === 'number'
                       ? Math.max(1, Math.min(31, Math.floor(taskRecord.recurringDayOfMonth)))
@@ -3726,7 +4301,8 @@ export class AppController {
         const taskRecurrenceMode =
           templateRecord.taskRecurrenceMode === 'calendarDate' ||
           templateRecord.taskRecurrenceMode === 'everyDays' ||
-          templateRecord.taskRecurrenceMode === 'monthly'
+          templateRecord.taskRecurrenceMode === 'monthly' ||
+          templateRecord.taskRecurrenceMode === 'weekly'
             ? templateRecord.taskRecurrenceMode
             : 'none';
         return {
@@ -3741,6 +4317,12 @@ export class AppController {
             typeof templateRecord.taskRecurrenceMonthlyDay === 'number'
               ? Math.max(1, Math.min(31, Math.floor(templateRecord.taskRecurrenceMonthlyDay)))
               : null,
+          taskRecurrenceWeekdays: normalizeRecurringWeekdays(
+            templateRecord.taskRecurrenceWeekdays,
+            typeof templateRecord.taskRecurrenceWeekday === 'number'
+              ? Math.max(0, Math.min(6, Math.floor(templateRecord.taskRecurrenceWeekday)))
+              : null,
+          ),
           autoScheduledTasks: normalizedTasks,
         };
       });
@@ -3764,6 +4346,68 @@ export class AppController {
     } catch {
       this.suppliesDraftByTemplateId = {};
     }
+  }
+
+  private loadFlowerSalesInventoryFromStorage(): void {
+    try {
+      const raw = localStorage.getItem(flowerSalesInventoryStorageKey);
+      if (!raw) return;
+      const decoded = JSON.parse(raw) as FlowerInventoryLot[];
+      if (!Array.isArray(decoded)) return;
+      this.flowerInventoryLots = decoded
+        .map((item) => ({
+          id: String(item.id ?? ''),
+          strainName: String(item.strainName ?? '').trim(),
+          weightLbs: Math.max(0.01, Number(item.weightLbs ?? 0)),
+          suggestedRetailPrice: Math.max(0, Number(item.suggestedRetailPrice ?? 0)),
+          createdAtIso: String(item.createdAtIso ?? new Date().toISOString()),
+          soldTo: item.soldTo ? String(item.soldTo).trim() : null,
+          soldPricePerPound:
+            typeof item.soldPricePerPound === 'number' && Number.isFinite(item.soldPricePerPound)
+              ? Math.max(0, Number(item.soldPricePerPound))
+              : null,
+          soldDateIso: item.soldDateIso ? String(item.soldDateIso) : null,
+        }))
+        .filter((item) => item.id && item.strainName);
+    } catch {
+      this.flowerInventoryLots = [];
+    }
+  }
+
+  private persistFlowerSalesInventoryToStorage(): void {
+    localStorage.setItem(flowerSalesInventoryStorageKey, JSON.stringify(this.flowerInventoryLots));
+  }
+
+  private loadFlowerSalesAppointmentsFromStorage(): void {
+    try {
+      const raw = localStorage.getItem(flowerSalesAppointmentsStorageKey);
+      if (!raw) return;
+      const decoded = JSON.parse(raw) as FlowerSalesAppointment[];
+      if (!Array.isArray(decoded)) return;
+      this.flowerSalesAppointments = decoded
+        .map((item) => ({
+          id: String(item.id ?? ''),
+          appointmentDateIso: String(item.appointmentDateIso ?? ''),
+          customerName: String(item.customerName ?? '').trim(),
+          notes: String(item.notes ?? ''),
+          strainName: String(item.strainName ?? '').trim(),
+          weightLbs:
+            typeof item.weightLbs === 'number' && Number.isFinite(item.weightLbs) && item.weightLbs > 0
+              ? Number(item.weightLbs)
+              : null,
+          createdAtIso: String(item.createdAtIso ?? new Date().toISOString()),
+        }))
+        .filter((item) => item.id && item.appointmentDateIso && item.customerName);
+    } catch {
+      this.flowerSalesAppointments = [];
+    }
+  }
+
+  private persistFlowerSalesAppointmentsToStorage(): void {
+    localStorage.setItem(
+      flowerSalesAppointmentsStorageKey,
+      JSON.stringify(this.flowerSalesAppointments),
+    );
   }
 
   private loadCompletedCalendarFromStorage(): void {
@@ -3810,6 +4454,7 @@ export class AppController {
         producer: normalizeTasks(decoded?.producer),
         generalManager: normalizeTasks(decoded?.generalManager),
         joManager: normalizeTasks(decoded?.joManager),
+        flowerSales: normalizeTasks(decoded?.flowerSales),
         budtenderTd: normalizeTasks(decoded?.budtenderTd),
         budtenderTdJunior: normalizeTasks(decoded?.budtenderTdJunior),
         budtenderJo: normalizeTasks(decoded?.budtenderJo),
@@ -3820,6 +4465,7 @@ export class AppController {
         producer: [],
         generalManager: [],
         joManager: [],
+        flowerSales: [],
         budtenderTd: [],
         budtenderTdJunior: [],
         budtenderJo: [],
@@ -3937,6 +4583,12 @@ export class AppController {
       for (const message of this.inboxByRole[role]) {
         consider(message.id);
       }
+    }
+    for (const lot of this.flowerInventoryLots) {
+      consider(lot.id);
+    }
+    for (const appointment of this.flowerSalesAppointments) {
+      consider(appointment.id);
     }
     this.idCounter = Math.max(this.idCounter, max + 1);
   }
