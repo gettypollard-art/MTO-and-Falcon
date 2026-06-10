@@ -10,18 +10,18 @@ export type UserRole =
   | 'budtenderJoSenior'
   | 'budtenderJoJunior';
 
-export type AssessmentTrack = 'producer' | 'generalManager' | 'joManager' | 'flowerSales' | 'budtenderTd' | 'budtenderTdJunior' | 'budtenderJo' | 'budtenderJoJunior';
+export type AssessmentTrack = 'producer' | 'generalManager' | 'joManager' | 'budtenderTd' | 'budtenderTdJunior' | 'budtenderJo' | 'budtenderJoJunior';
 
 export const userRoles: UserRole[] = [
   'ceo',
   'ceoExecutive',
   'generalManager',
+  'budtenderJoSenior',
   'flowerSales',
   'producer',
   'budtenderTd',
   'budtenderTdJunior',
   'budtenderJo',
-  'budtenderJoSenior',
   'budtenderJoJunior',
 ];
 
@@ -29,7 +29,6 @@ export const assessmentTracks: AssessmentTrack[] = [
   'producer',
   'generalManager',
   'joManager',
-  'flowerSales',
   'budtenderTd',
   'budtenderTdJunior',
   'budtenderJo',
@@ -52,22 +51,21 @@ export const userRoleLabel: Record<UserRole, string> = {
   generalManager: 'General Manager',
   flowerSales: 'Flower Sales',
   producer: 'Producer',
-  budtenderTd: 'Bud Tender TD D',
-  budtenderTdJunior: 'Bud Tender TD J',
-  budtenderJo: 'Bud Tender J O C',
+  budtenderTd: 'Budtender TD Denise',
+  budtenderTdJunior: 'Budtender TD Joseph',
+  budtenderJo: 'Budtender J-O Carson',
   budtenderJoSenior: 'Retail Manager Tyrell',
-  budtenderJoJunior: 'Bud Tender J O A',
+  budtenderJoJunior: 'Budtender J-O Amber',
 };
 
 export const trackLabel: Record<AssessmentTrack, string> = {
   producer: 'Producer',
   generalManager: 'General Manager',
   joManager: 'Retail Manager',
-  flowerSales: 'Flower Sales',
-  budtenderTd: 'Bud Tender TD D',
-  budtenderTdJunior: 'Bud Tender TD J',
-  budtenderJo: 'Bud Tender J O C',
-  budtenderJoJunior: 'Bud Tender J O A',
+  budtenderTd: 'Budtender TD Denise',
+  budtenderTdJunior: 'Budtender TD Joseph',
+  budtenderJo: 'Budtender J-O Carson',
+  budtenderJoJunior: 'Budtender J-O Amber',
 };
 
 export const roleDefaultTrack: Record<UserRole, AssessmentTrack> = {
@@ -75,7 +73,7 @@ export const roleDefaultTrack: Record<UserRole, AssessmentTrack> = {
   ceoExecutive: 'producer',
   producer: 'producer',
   generalManager: 'generalManager',
-  flowerSales: 'flowerSales',
+  flowerSales: 'generalManager',
   budtenderTd: 'budtenderTd',
   budtenderTdJunior: 'budtenderTdJunior',
   budtenderJo: 'budtenderJo',
@@ -128,7 +126,6 @@ export interface AutoScheduledTaskConfig {
   daysUntilDue: number | null;
   recurrence: 'none' | 'weekly' | 'monthly' | 'yearly';
   recurringWeekday: number | null;
-  recurringWeekdays?: number[];
   recurringDayOfMonth: number | null;
   recurringMonthOfYear: number | null;
 }
@@ -153,11 +150,10 @@ export interface AssessmentTemplate {
   dataRecipientRole: UserRole;
   dataRecipientRoles?: UserRole[];
   allowVoiceDictation: boolean;
-  taskRecurrenceMode: 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly';
+  taskRecurrenceMode: 'none' | 'calendarDate' | 'everyDays' | 'monthly';
   taskRecurrenceDateIso: string;
   taskRecurrenceEveryDays: number | null;
   taskRecurrenceMonthlyDay: number | null;
-  taskRecurrenceWeekdays?: number[];
   autoScheduledTasks: AutoScheduledTaskConfig[];
 }
 
@@ -223,27 +219,6 @@ export interface InboxMessage {
   createdAt: string;
   actionRequired: boolean;
   isRead: boolean;
-}
-
-export interface FlowerInventoryLot {
-  id: string;
-  strainName: string;
-  weightLbs: number;
-  suggestedRetailPrice: number;
-  createdAtIso: string;
-  soldTo: string | null;
-  soldPricePerPound: number | null;
-  soldDateIso: string | null;
-}
-
-export interface FlowerSalesAppointment {
-  id: string;
-  appointmentDateIso: string;
-  customerName: string;
-  notes: string;
-  strainName: string;
-  weightLbs: number | null;
-  createdAtIso: string;
 }
 
 export interface SuppliesRequestDraft {

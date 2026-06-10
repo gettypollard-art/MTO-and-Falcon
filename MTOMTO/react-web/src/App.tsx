@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { DragEvent, FormEvent, ReactNode } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { AppController, UI } from './controller';
 import {
-  roleCanAdmin,
   roleCanPlan,
   roleDefaultTrack,
   roleRequestTargets,
@@ -20,26 +19,25 @@ import type {
 } from './models';
 import { producerResourceStorageKey } from './backend/runtimeStore';
 import { producerResourceSections } from './producerResources';
-import { PricingModule } from './pricing/components/PricingModule';
-import { authenticate, clearStoredRole, defaultCredentials, getStoredRole, storeRole } from './auth';
-import * as XLSX from 'xlsx';
 import './App.css';
 
 type TabKey =
   | 'weekly'
   | 'calendar'
   | 'taskList'
-  | 'amendSoilCalc'
+  | 'masterTaskCalendar'
+  | 'recurringTasks'
   | 'mothersChart'
+  | 'cloneCalendar'
   | 'twoGalsChart'
   | 'flowerRoomRowChart'
+  | 'dryingRoomCalendar'
   | 'admin'
   | 'supplies'
-  | 'cloningProtocol'
-  | 'growingTips'
+  | 'resources'
+  | 'closingTasks'
   | 'ceoRequests'
-  | 'sendRequest'
-  | 'pricing';
+  | 'sendRequest';
 
 type DraftPlan = {
   day: number;
@@ -48,10 +46,80 @@ type DraftPlan = {
   flowerRowNumber: number | null;
 };
 
+type NewProducerTaskDraft = {
+  mode: 'task' | 'recurring';
+  title: string;
+  room: string;
+  category: string;
+  priority: number;
+  hours: number;
+  sendDataToSpecificEmployee: boolean;
+  dataRecipientRole: UserRole;
+  allowVoiceDictation: boolean;
+  recurringStartDateIso: string;
+  recurringTime: string;
+  recurringWeekday: number;
+  recurringFrequency: RecurringFrequency;
+};
+
+type RecurringFrequency = 'daily' | 'weekly' | 'biweekly' | 'threeWeeks' | 'fourWeeks' | 'fiveWeeks' | 'sixWeeks';
+
+type ProducerRecurringTask = {
+  templateId: string;
+  title: string;
+  room: string;
+  category: string;
+  hours: number;
+  weekday: number;
+  frequency: RecurringFrequency;
+  startDateIso: string;
+  time: string;
+  priority: number;
+};
+
+type FlowerSalesAccount = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  title: string;
+  organization: string;
+  email: string;
+  phone: string;
+  potentialValue: string;
+};
+
+type FlowerSalesAppointment = {
+  id: string;
+  accountId: string;
+  date: string;
+  time: string;
+  purpose: string;
+  followUpDate: string;
+  reminder: string;
+};
+
+type FlowerSalesDelivery = {
+  id: string;
+  accountId: string;
+  date: string;
+  product: string;
+  quantity: string;
+  status: string;
+};
+
+type FlowerSalesRecord = {
+  id: string;
+  accountId: string;
+  date: string;
+  product: string;
+  quantity: string;
+  price: string;
+  total: string;
+  deliveryDate: string;
+};
+
 type AutoScheduledTaskDraft = AutoScheduledTaskConfig;
 type CeoRequestSelection = UserRole | '__supply' | '';
-type TransferRowDraft = { rowNumber: number | null; strainName: string };
-type TransferQuestionDraft = { rows: TransferRowDraft[]; finalized: boolean };
 
 const recurrenceOptions: Array<{ value: AutoScheduledTaskConfig['recurrence']; label: string }> = [
   { value: 'none', label: 'One-time' },
@@ -59,6 +127,21 @@ const recurrenceOptions: Array<{ value: AutoScheduledTaskConfig['recurrence']; l
   { value: 'monthly', label: 'Monthly' },
   { value: 'yearly', label: 'Yearly' },
 ];
+
+const producerRecurringStorageKey = 'm.producer.recurring_tasks.v1';
+const flowerSalesStorageKey = 'm.flower_sales_crm.v1';
+
+const recurringFrequencyLabels: Record<RecurringFrequency, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  biweekly: 'Every 2 weeks',
+  threeWeeks: 'Every 3 weeks',
+  fourWeeks: 'Every 4 weeks',
+  fiveWeeks: 'Every 5 weeks',
+  sixWeeks: 'Every 6 weeks',
+};
+
+const recurringFrequencyOptions = Object.entries(recurringFrequencyLabels) as Array<[RecurringFrequency, string]>;
 
 const monthLabelsShort = [
   'Jan',
@@ -83,123 +166,8 @@ type TimelineEvent = {
   dateIso: string;
 };
 
-type SoilMetricTemplate = {
-  key: string;
-  label: string;
-  unit: string;
-  targetValue: number;
-  targetMin: number;
-  targetMax: number;
-  normalizedGroup: 'core' | 'saturation' | 'ppm';
-  amendmentName: string;
-  potencyPerLbPerRow: number;
-};
-
-const producerAmendSoilStorageKey = 'm.producer.amend_soil_calculator.v1';
-const soilMetricTemplates: SoilMetricTemplate[] = [
-  { key: 'ph', label: 'pH', unit: 'pH', targetValue: 6.1, targetMin: 5.7, targetMax: 6.4, normalizedGroup: 'core', amendmentName: 'Lime / pH correction blend', potencyPerLbPerRow: 0.08 },
-  { key: 'cec', label: 'CEC', unit: 'meq', targetValue: 30, targetMin: 20, targetMax: 50, normalizedGroup: 'core', amendmentName: 'CEC builder blend (peat/clay/organic)', potencyPerLbPerRow: 0.8 },
-  { key: 'om', label: 'Organic Matter', unit: '%', targetValue: 12.5, targetMin: 10, targetMax: 15, normalizedGroup: 'core', amendmentName: 'Compost / organic matter blend', potencyPerLbPerRow: 0.4 },
-  { key: 'phosphorous', label: 'Phosphorous', unit: 'lbs/acre', targetValue: 1000, targetMin: 800, targetMax: 1200, normalizedGroup: 'ppm', amendmentName: 'Soft rock phosphate', potencyPerLbPerRow: 80 },
-  { key: 'potassiumPct', label: 'Potassium saturation', unit: '%', targetValue: 6, targetMin: 5, targetMax: 7, normalizedGroup: 'saturation', amendmentName: 'Potassium phosphate MKP 0-52-34', potencyPerLbPerRow: 0.3 },
-  { key: 'sulfur', label: 'Sulfur', unit: 'ppm', targetValue: 200, targetMin: 150, targetMax: 250, normalizedGroup: 'ppm', amendmentName: 'Gypsum', potencyPerLbPerRow: 18 },
-  { key: 'calciumPct', label: 'Calcium saturation', unit: '%', targetValue: 70, targetMin: 68, targetMax: 72, normalizedGroup: 'saturation', amendmentName: 'Gypsum / wollastonite', potencyPerLbPerRow: 1.1 },
-  { key: 'magnesiumPct', label: 'Magnesium saturation', unit: '%', targetValue: 19, targetMin: 17, targetMax: 21, normalizedGroup: 'saturation', amendmentName: 'Dolomite lime', potencyPerLbPerRow: 0.7 },
-  { key: 'iron', label: 'Iron', unit: 'ppm', targetValue: 245, targetMin: 225, targetMax: 265, normalizedGroup: 'ppm', amendmentName: 'Iron sulfate', potencyPerLbPerRow: 10 },
-  { key: 'manganese', label: 'Manganese', unit: 'ppm', targetValue: 55, targetMin: 45, targetMax: 65, normalizedGroup: 'ppm', amendmentName: 'Manganese sulfate', potencyPerLbPerRow: 4 },
-  { key: 'zinc', label: 'Zinc', unit: 'ppm', targetValue: 25, targetMin: 20, targetMax: 30, normalizedGroup: 'ppm', amendmentName: 'Zinc sulfate', potencyPerLbPerRow: 2.5 },
-  { key: 'copper', label: 'Copper', unit: 'ppm', targetValue: 7, targetMin: 5, targetMax: 9, normalizedGroup: 'ppm', amendmentName: 'Copper sulfate', potencyPerLbPerRow: 0.5 },
-  { key: 'boron', label: 'Boron', unit: 'ppm', targetValue: 4.5, targetMin: 3, targetMax: 6, normalizedGroup: 'ppm', amendmentName: 'Solubor (Boron)', potencyPerLbPerRow: 0.25 },
-  { key: 'sodiumPct', label: 'Sodium saturation', unit: '%', targetValue: 1.5, targetMin: 0, targetMax: 3, normalizedGroup: 'saturation', amendmentName: 'Leaching / calcium balancing', potencyPerLbPerRow: 0.1 },
-  { key: 'aluminum', label: 'Aluminum', unit: 'ppm', targetValue: 250, targetMin: 0, targetMax: 500, normalizedGroup: 'ppm', amendmentName: 'pH correction + Ca balancing', potencyPerLbPerRow: 1 },
-];
-
-type SoilNeedClass = 'Raise aggressively' | 'Raise moderately' | 'Hold / maintenance only' | 'Stop adding / avoid';
-
 function normalized(value: string): string {
   return value.trim().toLowerCase();
-}
-
-function isTransferTaskTitle(title: string): boolean {
-  return normalized(title).includes('transfer veg plants to flower room');
-}
-
-function recurringWeekdaysForTask(task: AutoScheduledTaskDraft): number[] {
-  const source = Array.isArray(task.recurringWeekdays) && task.recurringWeekdays.length > 0
-    ? task.recurringWeekdays
-    : typeof task.recurringWeekday === 'number'
-      ? [task.recurringWeekday]
-      : [];
-  return Array.from(
-    new Set(
-      source
-        .map((day) => Number(day))
-        .filter((day) => Number.isFinite(day))
-        .map((day) => Math.max(0, Math.min(6, Math.floor(day)))),
-    ),
-  ).sort((a, b) => a - b);
-}
-
-function templateRecurrenceWeekdays(value: number[] | undefined): number[] {
-  return Array.from(
-    new Set(
-      (Array.isArray(value) ? value : [])
-        .map((day) => Number(day))
-        .filter((day) => Number.isFinite(day))
-        .map((day) => Math.max(0, Math.min(6, Math.floor(day)))),
-    ),
-  ).sort((a, b) => a - b);
-}
-
-function parseSoilNumber(value: string): number | null {
-  const cleaned = value.replace(/[^0-9.-]/g, '');
-  if (!cleaned) return null;
-  const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function classifySoilNeed(metric: SoilMetricTemplate, measured: number): SoilNeedClass {
-  const key = metric.key;
-
-  if (
-    (key === 'sulfur' && measured > 250)
-    || (key === 'zinc' && measured > 30)
-    || (key === 'phosphorous' && measured > 1200)
-    || (key === 'magnesiumPct' && measured > 21)
-    || (key === 'sodiumPct' && measured >= 2.8)
-    || (key === 'ph' && measured > 6.4)
-  ) {
-    return 'Stop adding / avoid';
-  }
-
-  if (measured >= metric.targetMin && measured <= metric.targetMax) {
-    return 'Hold / maintenance only';
-  }
-
-  if (measured < metric.targetMin) {
-    if (
-      key === 'phosphorous'
-      || key === 'calciumPct'
-      || key === 'potassiumPct'
-      || key === 'manganese'
-      || key === 'copper'
-      || key === 'boron'
-      || (key === 'iron' && measured < 225)
-      || (key === 'cec' && measured < 20)
-    ) {
-      return 'Raise aggressively';
-    }
-    if (
-      (key === 'ph' && measured < 5.7)
-      || (key === 'sulfur' && measured < 150)
-      || (key === 'magnesiumPct' && measured < 17)
-    ) {
-      return 'Raise moderately';
-    }
-    return 'Raise moderately';
-  }
-
-  return 'Hold / maintenance only';
 }
 
 function monthGridDays(monthCursor: Date): Date[] {
@@ -298,8 +266,9 @@ const growingTipsSections: Array<{ heading: string; points: string[] }> = [
 
 function categoryDisplayName(raw: string): string {
   const normalized = raw.trim().toLowerCase();
-  if (normalized === 'mothers inspection' || normalized === 'mothers') return 'Mother Inspection';
-  if (normalized === '2 gal plants' || normalized === '2 gallon plants' || normalized === '2 gallons') return 'Two-Gal Plants';
+  if (normalized === 'mothers inspection' || normalized === 'mothers' || normalized === 'mother inspection') return 'Mother';
+  if (normalized === '2 gal plants' || normalized === '2 gallon plants' || normalized === '2 gallons') return '2 Gal';
+  if (normalized === 'flowers') return 'Flower';
   if (normalized === 'clones') return 'Clones';
   return raw;
 }
@@ -373,239 +342,218 @@ function sortAdminTemplates(a: AssessmentTemplate, b: AssessmentTemplate): numbe
   return a.title.localeCompare(b.title);
 }
 
-function LoginScreen({ onLogin }: { onLogin: (role: UserRole) => void }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    const role = authenticate(username, password);
-    if (role) {
-      onLogin(role);
-    } else {
-      setError('Invalid username or password.');
-    }
-  };
-
-  return (
-    <div className="login-screen">
-      <div className="login-logo">
-        <h1>MTO</h1>
-        <p>Dispensary Management</p>
-      </div>
-      <div className="login-card">
-        <h2>Sign In</h2>
-        <form className="login-form" onSubmit={handleSubmit}>
-          <label>
-            Username
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => { setUsername(e.target.value); setError(''); }}
-              autoFocus
-              autoComplete="username"
-            />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(''); }}
-              autoComplete="current-password"
-            />
-          </label>
-          {error ? <p className="login-error">{error}</p> : null}
-          <button type="submit" className="login-submit">Sign In</button>
-        </form>
-      </div>
-      <div className="login-creds">
-        <div className="login-creds-header">Test Credentials</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Role</th>
-              <th>Username</th>
-              <th>Password</th>
-            </tr>
-          </thead>
-          <tbody>
-            {defaultCredentials.map((cred) => (
-              <tr key={cred.role}>
-                <td>{cred.label}</td>
-                <td><code>{cred.username}</code></td>
-                <td><code>{cred.password}</code></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function App() {
   const controller = useMemo(() => new AppController(), []);
   const [, setVersion] = useState(0);
   const [tab, setTab] = useState<TabKey>('weekly');
+  const [producerRecurringTasks, setProducerRecurringTasks] = useState<ProducerRecurringTask[]>(() => {
+    try {
+      const raw = localStorage.getItem(producerRecurringStorageKey);
+      const decoded = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(decoded)) return [];
+      return decoded.flatMap((item): ProducerRecurringTask[] => {
+        if (
+          !item
+          || typeof item.templateId !== 'string'
+          || typeof item.title !== 'string'
+          || typeof item.room !== 'string'
+          || typeof item.category !== 'string'
+          || typeof item.hours !== 'number'
+          || typeof item.weekday !== 'number'
+          || !['daily', 'weekly', 'biweekly', 'threeWeeks', 'fourWeeks', 'fiveWeeks', 'sixWeeks'].includes(item.frequency)
+        ) {
+          return [];
+        }
+        return [{
+          templateId: item.templateId,
+          title: item.title,
+          room: item.room,
+          category: item.category,
+          hours: item.hours,
+          weekday: Math.max(0, Math.min(6, Math.floor(item.weekday))),
+          frequency: item.frequency,
+          startDateIso: typeof item.startDateIso === 'string' && item.startDateIso ? item.startDateIso : new Date().toISOString().slice(0, 10),
+          time: typeof item.time === 'string' && item.time ? item.time : '08:00',
+          priority: typeof item.priority === 'number' ? Math.max(1, Math.min(5, Math.floor(item.priority))) : 3,
+        }];
+      });
+    } catch {
+      return [];
+    }
+  });
   const [showInbox, setShowInbox] = useState(false);
   const [showOverflow, setShowOverflow] = useState(false);
   const [showClosing, setShowClosing] = useState(false);
   const [showRestoredClosing, setShowRestoredClosing] = useState(false);
   const [ceoRequestViewRole, setCeoRequestViewRole] = useState<CeoRequestSelection>('');
   const [sendRequestTarget, setSendRequestTarget] = useState<UserRole | ''>('');
-  const [loggedInRole, setLoggedInRole] = useState<UserRole | null>(() => getStoredRole());
-
-  const handleLogin = (role: UserRole) => {
-    storeRole(role);
-    controller.setRole(role);
-    setLoggedInRole(role);
-    setTab('weekly');
-  };
-
-  const handleLogout = () => {
-    clearStoredRole();
-    setLoggedInRole(null);
-  };
 
   useEffect(() => {
     const unsub = controller.subscribe(() => setVersion((v) => v + 1));
     void controller.loadInitialAssessments();
-    if (loggedInRole) controller.setRole(loggedInRole);
     return unsub;
-  }, [controller, loggedInRole]);
+  }, [controller]);
+
+  useEffect(() => {
+    localStorage.setItem(producerRecurringStorageKey, JSON.stringify(producerRecurringTasks));
+  }, [producerRecurringTasks]);
+
+  const upsertProducerRecurringTask = (task: ProducerRecurringTask) => {
+    setProducerRecurringTasks((current) => {
+      const next = current.filter((item) => item.templateId !== task.templateId);
+      return [...next, task].sort((a, b) => a.room.localeCompare(b.room) || a.title.localeCompare(b.title));
+    });
+  };
+
+  const removeProducerRecurringTask = (templateId: string) => {
+    setProducerRecurringTasks((current) => current.filter((task) => task.templateId !== templateId));
+  };
 
   const canPlan = roleCanPlan(controller.selectedRole);
-  const canAdmin = roleCanAdmin(controller.selectedRole);
+  const canAdmin = controller.canModifyBackend;
   const requestTargets = roleRequestTargets[controller.selectedRole] ?? [];
 
   const availableTabs: TabKey[] = [
-    'weekly',
-    ...(canPlan ? ['calendar' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? [] : ['weekly' as TabKey]),
+    ...(controller.selectedRole !== 'producer' && canPlan ? ['calendar' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['taskList' as TabKey] : []),
-    ...(controller.selectedRole === 'producer' ? ['amendSoilCalc' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? ['masterTaskCalendar' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? ['recurringTasks' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['mothersChart' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? ['cloneCalendar' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['twoGalsChart' as TabKey] : []),
     ...(controller.selectedRole === 'producer' ? ['flowerRoomRowChart' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? ['dryingRoomCalendar' as TabKey] : []),
     ...(canAdmin ? ['admin' as TabKey] : []),
-    ...(controller.selectedRole === 'producer' ? ['supplies' as TabKey] : []),
-    ...(controller.selectedRole === 'producer' ? ['cloningProtocol' as TabKey] : []),
-    ...(controller.selectedRole === 'producer' ? ['growingTips' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? ['resources' as TabKey] : []),
+    ...(controller.selectedRole === 'producer' ? ['closingTasks' as TabKey] : []),
     ...(controller.selectedRole === 'ceoExecutive' ? ['ceoRequests' as TabKey] : []),
     ...(requestTargets.length > 0 ? ['sendRequest' as TabKey] : []),
-    ...(
-      controller.selectedRole === 'ceoExecutive'
-      || controller.selectedRole === 'ceo'
-      || controller.selectedRole === 'budtenderJoSenior'
-        ? ['pricing' as TabKey]
-        : []
-    ),
   ];
-  const currentTab: TabKey = availableTabs.includes(tab) ? tab : 'weekly';
-
-  if (!loggedInRole) {
-    return <LoginScreen onLogin={handleLogin} />;
-  }
+  const currentTab: TabKey = availableTabs.includes(tab)
+    ? tab
+    : controller.selectedRole === 'producer'
+      ? 'taskList'
+      : 'weekly';
 
   return (
     <div className="app">
-      <header className={`topbar ${controller.selectedRole === 'producer' ? 'topbar-producer' : ''}`}>
+      <header className="topbar">
+        <div className="left">
+          <h1>M Web</h1>
+          <p>{controller.weekLabel}</p>
+        </div>
+        <div className="actions">
+          {controller.selectedRole === 'producer' && controller.overflowTasks.length > 0 ? (
+            <button onClick={() => setShowOverflow(true)}>Overflow</button>
+          ) : null}
+          <button onClick={() => setShowInbox(true)}>Inbox ({controller.unreadInboxCountForSelectedRole})</button>
+        </div>
+      </header>
 
-        {/* ── Navigation tabs (role-dependent) ── */}
-        <div className={`topbar-nav ${controller.selectedRole === 'producer' ? 'topbar-nav-producer' : ''}`}>
-          {controller.selectedRole === 'producer' ? (
-            <>
-              <div className="producer-tab-row producer-tab-row-label">
-                <span className="producer-following-label">Schedule Weekly Tasks</span>
-              </div>
-              <div className="producer-tab-row">
-                <button className={currentTab === 'weekly' ? 'active' : ''} onClick={() => setTab('weekly')}>
-                  Weekly Tasks
-                </button>
+      <nav className="role-tabs" aria-label="Frontend roles">
+        {userRoles.map((role) => (
+          <button
+            key={role}
+            type="button"
+            className={
+              role === 'ceo'
+                ? controller.canModifyBackend ? 'active admin-active' : ''
+                : controller.selectedRole === role ? 'active' : ''
+            }
+            onClick={() => {
+              if (role === 'ceo') {
+                controller.setAdminEditMode(!controller.canModifyBackend);
+                return;
+              }
+              controller.setRole(role);
+              setTab(role === 'producer' ? 'taskList' : 'weekly');
+            }}
+          >
+            {userRoleLabel[role]}
+          </button>
+        ))}
+      </nav>
+
+      <nav className={`tabs ${controller.selectedRole === 'producer' ? 'tabs-producer' : ''}`}>
+        {controller.selectedRole === 'producer' ? (
+          <>
+            <div className="producer-tab-row producer-primary-tabs">
+              <button
+                className={`task-list-tab ${currentTab === 'taskList' ? 'active' : ''}`}
+                onClick={() => setTab('taskList')}
+              >
+                Task List
+              </button>
+              <button
+                className={currentTab === 'masterTaskCalendar' ? 'active' : ''}
+                onClick={() => setTab('masterTaskCalendar')}
+              >
+                Master Task Calendar
+              </button>
+              <button
+                className={currentTab === 'recurringTasks' ? 'active' : ''}
+                onClick={() => setTab('recurringTasks')}
+              >
+                Recurring Task List
+              </button>
+              <button
+                className={`mothers-tab ${currentTab === 'mothersChart' ? 'active' : ''}`}
+                onClick={() => setTab('mothersChart')}
+              >
+                Mother Calendar
+              </button>
+              <button
+                className={currentTab === 'cloneCalendar' ? 'active' : ''}
+                onClick={() => setTab('cloneCalendar')}
+              >
+                Clone Calendar
+              </button>
+              <button
+                className={`two-gals-tab ${currentTab === 'twoGalsChart' ? 'active' : ''}`}
+                onClick={() => setTab('twoGalsChart')}
+              >
+                2 Gal Calendar
+              </button>
+              <button
+                className={`flower-row-chart-tab ${currentTab === 'flowerRoomRowChart' ? 'active' : ''}`}
+                onClick={() => setTab('flowerRoomRowChart')}
+              >
+                Flower Room Calendar
+              </button>
+              <button
+                className={currentTab === 'dryingRoomCalendar' ? 'active' : ''}
+                onClick={() => setTab('dryingRoomCalendar')}
+              >
+                Drying Room Calendar
+              </button>
+              <button
+                className={`cloning-protocol-tab ${currentTab === 'resources' ? 'active' : ''}`}
+                onClick={() => setTab('resources')}
+              >
+                Resources
+              </button>
+              {canAdmin ? (
                 <button
-                  className={`task-list-tab ${currentTab === 'taskList' ? 'active' : ''}`}
-                  onClick={() => setTab((prev) => (prev === 'taskList' ? 'weekly' : 'taskList'))}
+                  className={currentTab === 'admin' ? 'active' : ''}
+                  onClick={() => setTab('admin')}
                 >
-                  Two-Week List
+                  CEO Modification Tasks
                 </button>
-                {canPlan ? (
-                  <button className={currentTab === 'calendar' ? 'active' : ''} onClick={() => setTab('calendar')}>
-                    Calendar
-                  </button>
-                ) : null}
-                <button
-                  className={`supplies-tab ${currentTab === 'supplies' ? 'active' : ''}`}
-                  onClick={() => setTab('supplies')}
-                >
-                  Supplies
-                </button>
-                <button
-                  className={currentTab === 'amendSoilCalc' ? 'active' : ''}
-                  onClick={() => setTab('amendSoilCalc')}
-                >
-                  Amend Soil Calculator
-                </button>
-                {requestTargets.length > 0 ? (
-                  <select
-                    className="request-dropdown"
-                    value={currentTab === 'sendRequest' ? (sendRequestTarget || '') : ''}
-                    onChange={(e) => {
-                      const role = e.target.value as UserRole;
-                      setSendRequestTarget(role);
-                      setTab('sendRequest');
-                    }}
-                  >
-                    <option value="">Send Request…</option>
-                    {requestTargets.map((role) => (
-                      <option key={role} value={role}>{userRoleLabel[role]}</option>
-                    ))}
-                  </select>
-                ) : null}
-                {canPlan && currentTab === 'calendar' ? (
-                  <>
-                    <button onClick={() => controller.moveOneWeekBackward()}>← Week</button>
-                    <button onClick={() => controller.moveOneWeekForward()}>Week →</button>
-                  </>
-                ) : null}
-              </div>
-              <div className="producer-tab-row">
-                <button
-                  className={`mothers-tab ${currentTab === 'mothersChart' ? 'active' : ''}`}
-                  onClick={() => setTab('mothersChart')}
-                >
-                  Mothers Chart
-                </button>
-                <button
-                  className={`two-gals-tab ${currentTab === 'twoGalsChart' ? 'active' : ''}`}
-                  onClick={() => setTab('twoGalsChart')}
-                >
-                  Two Gals
-                </button>
-                <button
-                  className={`flower-row-chart-tab ${currentTab === 'flowerRoomRowChart' ? 'active' : ''}`}
-                  onClick={() => setTab('flowerRoomRowChart')}
-                >
-                  Flower Room
-                </button>
-                <button
-                  className={`cloning-protocol-tab ${currentTab === 'cloningProtocol' ? 'active' : ''}`}
-                  onClick={() => setTab('cloningProtocol')}
-                >
-                  Cloning
-                </button>
-                <button
-                  className={`growing-tips-tab ${currentTab === 'growingTips' ? 'active' : ''}`}
-                  onClick={() => setTab('growingTips')}
-                >
-                  Growing Tips
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
+              ) : null}
+              <button
+                className={currentTab === 'closingTasks' ? 'active' : ''}
+                onClick={() => setTab('closingTasks')}
+              >
+                Closing Tasks
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="tabs-left">
               <button className={currentTab === 'weekly' ? 'active' : ''} onClick={() => setTab('weekly')}>
-                Weekly Tasks
+                Planned Weekly Tasks
               </button>
               {canPlan ? (
                 <button className={currentTab === 'calendar' ? 'active' : ''} onClick={() => setTab('calendar')}>
@@ -617,15 +565,8 @@ function App() {
                   Task Details
                 </button>
               ) : null}
-              {(
-                controller.selectedRole === 'ceoExecutive'
-                || controller.selectedRole === 'ceo'
-                || controller.selectedRole === 'budtenderJoSenior'
-              ) ? (
-                <button className={currentTab === 'pricing' ? 'active' : ''} onClick={() => setTab('pricing')}>
-                  Pricing
-                </button>
-              ) : null}
+            </div>
+            <div className="tabs-center">
               {controller.selectedRole === 'ceoExecutive' ? (
                 <select
                   className="request-dropdown"
@@ -636,12 +577,14 @@ function App() {
                     setTab('ceoRequests');
                   }}
                 >
-                  <option value="">View Requests…</option>
-                  <option value="__supply">Supply Requests</option>
+                  <option value="">View Requests From...</option>
+                  <option value="__supply">Producer Supply Requests</option>
                   {userRoles
                     .filter((role) => role !== 'ceo' && role !== 'ceoExecutive')
                     .map((role) => (
-                      <option key={role} value={role}>{userRoleLabel[role]} Requests</option>
+                      <option key={role} value={role}>
+                        {userRoleLabel[role]} Requests
+                      </option>
                     ))}
                 </select>
               ) : null}
@@ -655,94 +598,76 @@ function App() {
                     setTab('sendRequest');
                   }}
                 >
-                  <option value="">Send Request…</option>
+                  <option value="">Send Request To...</option>
                   {requestTargets.map((role) => (
-                    <option key={role} value={role}>{userRoleLabel[role]}</option>
+                    <option key={role} value={role}>
+                      {userRoleLabel[role]}
+                    </option>
                   ))}
                 </select>
               ) : null}
+            </div>
+            <div className="tabs-right">
               {canPlan && currentTab === 'calendar' ? (
-                <>
-                  <button onClick={() => controller.moveOneWeekBackward()}>← Week</button>
-                  <button onClick={() => controller.moveOneWeekForward()}>Week →</button>
-                </>
+                <div className="tabs-week-nav">
+                  <button onClick={() => controller.moveOneWeekBackward()}>Back a Week</button>
+                  <button onClick={() => controller.moveOneWeekForward()}>Forward a Week</button>
+                </div>
               ) : null}
-            </>
-          )}
-        </div>
-
-        {/* ── Right-side actions ── */}
-        <div className="topbar-actions">
-          {controller.selectedRole === 'producer' && controller.overflowTasks.length > 0 ? (
-            <button onClick={() => setShowOverflow(true)}>Overflow</button>
-          ) : null}
-          {controller.selectedRole === 'producer' && controller.closingTasksForActiveTrack().length > 0 ? (
-            <button onClick={() => setShowClosing(true)}>Closing</button>
-          ) : null}
-          {controller.selectedRole === 'producer' ? (
-            <button onClick={() => setShowRestoredClosing(true)}>Restored</button>
-          ) : null}
-          <button onClick={() => setShowInbox(true)}>
-            Inbox {controller.unreadInboxCountForSelectedRole > 0 ? `(${controller.unreadInboxCountForSelectedRole})` : ''}
-          </button>
-          {(controller.selectedRole === 'ceo' || controller.selectedRole === 'ceoExecutive') ? (
-            <select value={controller.ceoTrack} onChange={(e) => controller.setCeoTrack(e.target.value as AssessmentTrack)}>
-              {assessmentTracks.map((track) => (
-                <option key={track} value={track}>
-                  {controller.selectedRole === 'ceo' ? 'Admin' : 'CEO'}: {trackLabel[track]}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          {controller.selectedRole === 'generalManager' ? (
-            <select
-              value={controller.generalManagerViewRole}
-              onChange={(e) => controller.setGeneralManagerViewRole(e.target.value as UserRole)}
-            >
-              {userRoles
-                .filter((role) => role !== 'ceo' && role !== 'ceoExecutive')
-                .map((role) => (
-                  <option key={role} value={role}>GM: {userRoleLabel[role]}</option>
-                ))}
-            </select>
-          ) : null}
-          {loggedInRole === 'ceo' ? (
-            <select
-              value={controller.selectedRole}
-              onChange={(e) => {
-                controller.setRole(e.target.value as UserRole);
-                setTab('weekly');
-              }}
-            >
-              {userRoles.map((role) => (
-                <option key={role} value={role}>{userRoleLabel[role]}</option>
-              ))}
-            </select>
-          ) : null}
-          <div className="topbar-auth">
-            <span className="topbar-user">{userRoleLabel[loggedInRole]}</span>
-            <button className="topbar-logout" onClick={handleLogout}>Log Out</button>
-          </div>
-        </div>
-
-      </header>
+            </div>
+          </>
+        )}
+      </nav>
 
       <main className="content">
         {controller.isLoading ? <div className="card">Loading assessments...</div> : null}
-        {!controller.isLoading && currentTab === 'weekly' ? (
-          controller.selectedRole === 'flowerSales'
-            ? <FlowerSalesPage controller={controller} />
-            : <WeeklyPage controller={controller} />
+        {!controller.isLoading && currentTab === 'weekly' && controller.selectedRole === 'ceoExecutive' ? (
+          <CeoCompanyDashboardPage controller={controller} />
         ) : null}
-        {!controller.isLoading && currentTab === 'calendar' && canPlan ? <CalendarPage controller={controller} /> : null}
-        {!controller.isLoading && currentTab === 'taskList' && controller.selectedRole === 'producer' ? (
+        {!controller.isLoading && currentTab === 'weekly' && controller.selectedRole === 'flowerSales' ? (
+          <FlowerSalesCrmPage />
+        ) : null}
+        {!controller.isLoading && currentTab === 'weekly' && controller.selectedRole === 'producer' ? (
           <ProducerTwoWeekTaskListPage controller={controller} />
         ) : null}
-        {!controller.isLoading && currentTab === 'amendSoilCalc' && controller.selectedRole === 'producer' ? (
-          <ProducerAmendSoilCalculatorPage />
+        {!controller.isLoading && currentTab === 'weekly' && !['producer', 'flowerSales', 'ceoExecutive'].includes(controller.selectedRole) ? (
+          <WeeklyPage controller={controller} />
+        ) : null}
+        {!controller.isLoading && currentTab === 'calendar' && canPlan ? (
+          <CalendarPage
+            controller={controller}
+            title="Veg Calendar"
+            taskFilter={(task) => normalized(task.room).includes('veg room')}
+          />
+        ) : null}
+        {!controller.isLoading && currentTab === 'taskList' && controller.selectedRole === 'producer' ? (
+          <WeeklyPage
+            controller={controller}
+            producerRecurringTasks={producerRecurringTasks}
+            onUpsertProducerRecurringTask={upsertProducerRecurringTask}
+            onRemoveProducerRecurringTask={removeProducerRecurringTask}
+          />
+        ) : null}
+        {!controller.isLoading && currentTab === 'masterTaskCalendar' && controller.selectedRole === 'producer' ? (
+          <MasterTaskCalendarPage
+            controller={controller}
+            recurringTasks={producerRecurringTasks}
+            onClearRecurringTasks={() => setProducerRecurringTasks([])}
+          />
+        ) : null}
+        {!controller.isLoading && currentTab === 'recurringTasks' && controller.selectedRole === 'producer' ? (
+          <ProducerRecurringTasksPage
+            controller={controller}
+            recurringTasks={producerRecurringTasks}
+            onUpdate={upsertProducerRecurringTask}
+            onRemove={removeProducerRecurringTask}
+          />
         ) : null}
         {!controller.isLoading && currentTab === 'mothersChart' && controller.selectedRole === 'producer' ? (
           <MothersFeedingPruningChartPage controller={controller} />
+        ) : null}
+        {!controller.isLoading && currentTab === 'cloneCalendar' && controller.selectedRole === 'producer' ? (
+          <CloneCalendarPage controller={controller} />
         ) : null}
         {!controller.isLoading && currentTab === 'twoGalsChart' && controller.selectedRole === 'producer' ? (
           <TwoGalsChartPage controller={controller} />
@@ -750,15 +675,18 @@ function App() {
         {!controller.isLoading && currentTab === 'flowerRoomRowChart' && controller.selectedRole === 'producer' ? (
           <FlowerRoomRowChartPage controller={controller} />
         ) : null}
+        {!controller.isLoading && currentTab === 'dryingRoomCalendar' && controller.selectedRole === 'producer' ? (
+          <DryingRoomCalendarPage controller={controller} />
+        ) : null}
         {!controller.isLoading && currentTab === 'admin' && canAdmin ? <AdminPage controller={controller} /> : null}
         {!controller.isLoading && currentTab === 'supplies' && controller.selectedRole === 'producer' ? (
           <ProducerResourcesPage controller={controller} />
         ) : null}
-        {!controller.isLoading && currentTab === 'cloningProtocol' && controller.selectedRole === 'producer' ? (
-          <CloningProtocolPage />
+        {!controller.isLoading && currentTab === 'resources' && controller.selectedRole === 'producer' ? (
+          <ProducerReferenceResourcesPage />
         ) : null}
-        {!controller.isLoading && currentTab === 'growingTips' && controller.selectedRole === 'producer' ? (
-          <GrowingTipsPage />
+        {!controller.isLoading && currentTab === 'closingTasks' && controller.selectedRole === 'producer' ? (
+          <ProducerClosingTasksPage controller={controller} />
         ) : null}
         {!controller.isLoading && currentTab === 'ceoRequests' && controller.selectedRole === 'ceoExecutive' && ceoRequestViewRole === '__supply' ? (
           <CeoSupplyRequestsPage controller={controller} />
@@ -775,9 +703,6 @@ function App() {
         {!controller.isLoading && currentTab === 'sendRequest' && !sendRequestTarget ? (
           <div className="card"><p className="muted">Select a recipient from the &ldquo;Send Request To...&rdquo; dropdown above.</p></div>
         ) : null}
-        {!controller.isLoading && currentTab === 'pricing' ? (
-          <PricingModule />
-        ) : null}
       </main>
 
       {showOverflow ? (
@@ -788,14 +713,14 @@ function App() {
               <input
                 type="checkbox"
                 checked={task.completed}
-                disabled={task.completed && !roleCanAdmin(controller.selectedRole)}
+                disabled={task.completed && !controller.canModifyBackend}
                 onChange={(e) => {
                   const ok = controller.toggleOverflowTaskCompletion(task.id, e.target.checked);
                   if (!ok && e.target.checked) {
                     alert('Send required task data/message before marking this task complete.');
                   }
                   if (!ok && !e.target.checked) {
-                    alert('Completed tasks are locked. Only Admin can modify them.');
+                    alert('Completed tasks are locked. Select Admin to modify them.');
                   }
                 }}
               />
@@ -1171,6 +1096,818 @@ function GrowingTipsPage() {
   );
 }
 
+function ProducerReferenceResourcesPage() {
+  return (
+    <div className="grid">
+      <CloningProtocolPage />
+      <GrowingTipsPage />
+    </div>
+  );
+}
+
+function ProducerClosingTasksPage({ controller }: { controller: AppController }) {
+  const closingTasks = controller.closingTasksForActiveTrack();
+
+  return (
+    <div className="grid">
+      <div className="card producer-supplies-card">
+        <h2>Closing Tasks</h2>
+        {closingTasks.length === 0 ? <p>No closing tasks configured.</p> : null}
+        {closingTasks.map((task, index) => (
+          <label key={task.id} className="check-row">
+            <input
+              type="checkbox"
+              checked={controller.isClosingTaskChecked(task.id)}
+              onChange={(e) => controller.setClosingTaskChecked(task.id, e.target.checked)}
+            />
+            <span>
+              {index + 1}. {task.title}
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FlowerSalesCrmPage() {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const blankAccount = (): FlowerSalesAccount => ({
+    id: `acct-${Date.now()}`,
+    firstName: '',
+    lastName: '',
+    title: '',
+    organization: '',
+    email: '',
+    phone: '',
+    potentialValue: '',
+  });
+  const blankAppointment = (accountId = ''): FlowerSalesAppointment => ({
+    id: `appt-${Date.now()}`,
+    accountId,
+    date: todayIso,
+    time: '10:00',
+    purpose: 'Sales appointment',
+    followUpDate: '',
+    reminder: 'Follow up after appointment',
+  });
+  const blankDelivery = (accountId = ''): FlowerSalesDelivery => ({
+    id: `delivery-${Date.now()}`,
+    accountId,
+    date: todayIso,
+    product: 'Flower',
+    quantity: '',
+    status: 'Scheduled',
+  });
+  const blankSale = (accountId = ''): FlowerSalesRecord => ({
+    id: `sale-${Date.now()}`,
+    accountId,
+    date: todayIso,
+    product: 'Flower',
+    quantity: '',
+    price: '',
+    total: '',
+    deliveryDate: '',
+  });
+  const [accounts, setAccounts] = useState<FlowerSalesAccount[]>(() => {
+    const saved = localStorage.getItem(flowerSalesStorageKey);
+    if (!saved) return [blankAccount()];
+    try {
+      const parsed = JSON.parse(saved) as { accounts?: FlowerSalesAccount[] };
+      return parsed.accounts?.length ? parsed.accounts : [blankAccount()];
+    } catch {
+      return [blankAccount()];
+    }
+  });
+  const [appointments, setAppointments] = useState<FlowerSalesAppointment[]>(() => {
+    const saved = localStorage.getItem(flowerSalesStorageKey);
+    if (!saved) return [];
+    try {
+      return (JSON.parse(saved) as { appointments?: FlowerSalesAppointment[] }).appointments ?? [];
+    } catch {
+      return [];
+    }
+  });
+  const [deliveries, setDeliveries] = useState<FlowerSalesDelivery[]>(() => {
+    const saved = localStorage.getItem(flowerSalesStorageKey);
+    if (!saved) return [];
+    try {
+      return (JSON.parse(saved) as { deliveries?: FlowerSalesDelivery[] }).deliveries ?? [];
+    } catch {
+      return [];
+    }
+  });
+  const [sales, setSales] = useState<FlowerSalesRecord[]>(() => {
+    const saved = localStorage.getItem(flowerSalesStorageKey);
+    if (!saved) return [];
+    try {
+      return (JSON.parse(saved) as { sales?: FlowerSalesRecord[] }).sales ?? [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedAccountId, setSelectedAccountId] = useState(() => accounts[0]?.id ?? '');
+  const [appointmentDraft, setAppointmentDraft] = useState<FlowerSalesAppointment>(() =>
+    blankAppointment(accounts[0]?.id ?? ''),
+  );
+  const [monthCursor, setMonthCursor] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      flowerSalesStorageKey,
+      JSON.stringify({ accounts, appointments, deliveries, sales }),
+    );
+  }, [accounts, appointments, deliveries, sales]);
+
+  const accountName = (accountId: string) => {
+    const account = accounts.find((item) => item.id === accountId);
+    if (!account) return 'Unassigned account';
+    const person = `${account.firstName} ${account.lastName}`.trim();
+    return [person, account.organization].filter(Boolean).join(' - ') || 'Unnamed buyer';
+  };
+
+  const calendarEvents = [
+    ...appointments.map((appointment) => ({
+      id: appointment.id,
+      date: appointment.date,
+      title: `${appointment.time} Appointment: ${accountName(appointment.accountId)}`,
+    })),
+    ...appointments
+      .filter((appointment) => appointment.followUpDate)
+      .map((appointment) => ({
+        id: `${appointment.id}-follow-up`,
+        date: appointment.followUpDate,
+        title: `Follow-up: ${accountName(appointment.accountId)}`,
+      })),
+    ...sales.map((sale) => ({
+      id: sale.id,
+      date: sale.date,
+      title: `Sale: ${accountName(sale.accountId)} ${sale.total ? `$${sale.total}` : ''}`,
+    })),
+    ...deliveries.map((delivery) => ({
+      id: delivery.id,
+      date: delivery.date,
+      title: `Delivery: ${accountName(delivery.accountId)}`,
+    })),
+  ];
+  const eventsByDate = calendarEvents.reduce<Record<string, typeof calendarEvents>>((acc, event) => {
+    if (!acc[event.date]) acc[event.date] = [];
+    acc[event.date].push(event);
+    return acc;
+  }, {});
+  const upcomingReminders = appointments
+    .filter((appointment) => appointment.followUpDate)
+    .sort((a, b) => a.followUpDate.localeCompare(b.followUpDate));
+  const monthDays = monthGridDays(monthCursor);
+  const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
+
+  return (
+    <div className="crm-grid">
+      <section className="card crm-wide">
+        <h2>Flower Sales CRM</h2>
+        <div className="header-row">
+          <p className="muted">Retail buyer accounts, appointments, deliveries, follow-ups, and sales records.</p>
+          <button onClick={() => setAccounts((rows) => [...rows, blankAccount()])}>Add Retail Buyer</button>
+        </div>
+        <div className="crm-account-grid">
+          {accounts.map((account) => (
+            <article
+              key={account.id}
+              className={`crm-account-card ${selectedAccountId === account.id ? 'active' : ''}`}
+              onClick={() => {
+                setSelectedAccountId(account.id);
+                setAppointmentDraft((draft) => ({ ...draft, accountId: account.id }));
+              }}
+            >
+              <div className="crm-account-title">
+                <strong>{accountName(account.id)}</strong>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedAccountId(account.id);
+                    setAppointmentDraft(blankAppointment(account.id));
+                  }}
+                >
+                  Schedule
+                </button>
+              </div>
+              <input value={account.firstName} placeholder="First name" onChange={(e) => setAccounts((rows) => rows.map((row) => row.id === account.id ? { ...row, firstName: e.target.value } : row))} />
+              <input value={account.lastName} placeholder="Last name" onChange={(e) => setAccounts((rows) => rows.map((row) => row.id === account.id ? { ...row, lastName: e.target.value } : row))} />
+              <input value={account.title} placeholder="Title" onChange={(e) => setAccounts((rows) => rows.map((row) => row.id === account.id ? { ...row, title: e.target.value } : row))} />
+              <input value={account.organization} placeholder="Organization" onChange={(e) => setAccounts((rows) => rows.map((row) => row.id === account.id ? { ...row, organization: e.target.value } : row))} />
+              <input value={account.email} placeholder="Email" onChange={(e) => setAccounts((rows) => rows.map((row) => row.id === account.id ? { ...row, email: e.target.value } : row))} />
+              <input value={account.phone} placeholder="Phone number" onChange={(e) => setAccounts((rows) => rows.map((row) => row.id === account.id ? { ...row, phone: e.target.value } : row))} />
+              <input value={account.potentialValue} placeholder="Potential value" onChange={(e) => setAccounts((rows) => rows.map((row) => row.id === account.id ? { ...row, potentialValue: e.target.value } : row))} />
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Schedule Buyer Appointment</h2>
+        <p className="muted">{selectedAccount ? accountName(selectedAccount.id) : 'Select or add a retail buyer.'}</p>
+        <div className="form-grid">
+          <label>
+            Contact
+            <select
+              value={appointmentDraft.accountId}
+              onChange={(e) => {
+                setSelectedAccountId(e.target.value);
+                setAppointmentDraft({ ...appointmentDraft, accountId: e.target.value });
+              }}
+            >
+              <option value="">Select buyer</option>
+              {accounts.map((account) => (
+                <option key={`appt-account-${account.id}`} value={account.id}>
+                  {accountName(account.id)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Appointment date
+            <input type="date" value={appointmentDraft.date} onChange={(e) => setAppointmentDraft({ ...appointmentDraft, date: e.target.value })} />
+          </label>
+          <label>
+            Time
+            <input type="time" value={appointmentDraft.time} onChange={(e) => setAppointmentDraft({ ...appointmentDraft, time: e.target.value })} />
+          </label>
+          <label>
+            Purpose
+            <input value={appointmentDraft.purpose} onChange={(e) => setAppointmentDraft({ ...appointmentDraft, purpose: e.target.value })} />
+          </label>
+          <label>
+            Follow-up date
+            <input type="date" value={appointmentDraft.followUpDate} onChange={(e) => setAppointmentDraft({ ...appointmentDraft, followUpDate: e.target.value })} />
+          </label>
+          <label>
+            Reminder
+            <input value={appointmentDraft.reminder} onChange={(e) => setAppointmentDraft({ ...appointmentDraft, reminder: e.target.value })} />
+          </label>
+          <button
+            onClick={() => {
+              if (!appointmentDraft.accountId) {
+                alert('Select a retail buyer before scheduling an appointment.');
+                return;
+              }
+              setAppointments((rows) => [...rows.filter((row) => row.id !== appointmentDraft.id), appointmentDraft]);
+              setAppointmentDraft(blankAppointment(appointmentDraft.accountId));
+            }}
+          >
+            Add to Calendar
+          </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="month-nav">
+          <h2>Appointments, Follow-Ups, Sales, Deliveries</h2>
+          <div className="button-row">
+            <button onClick={() => setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Previous Month</button>
+            <button onClick={() => setMonthCursor((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Next Month</button>
+          </div>
+        </div>
+        <div className="month-grid crm-month-grid">
+          {UI.dayLabels.map((label) => (
+            <div key={`crm-head-${label}`} className="month-head">{label}</div>
+          ))}
+          {monthDays.map((date) => {
+            const iso = toIso(date);
+            const events = eventsByDate[iso] ?? [];
+            return (
+              <section key={`crm-day-${iso}`} className={`month-cell ${date.getMonth() === monthCursor.getMonth() ? '' : 'outside-month'}`}>
+                <h3>{date.getDate()}</h3>
+                {events.map((event) => (
+                  <article key={event.id} className="calendar-item calendar-item-tight">
+                    <strong>{event.title}</strong>
+                  </article>
+                ))}
+              </section>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Follow-Up Reminders</h2>
+        <div className="calendar-list">
+          {upcomingReminders.map((appointment) => (
+            <article key={`reminder-${appointment.id}`} className="calendar-item">
+              <strong>{appointment.followUpDate} - {accountName(appointment.accountId)}</strong>
+              <span>{appointment.reminder}</span>
+              <span>Appointment: {appointment.date} at {appointment.time}</span>
+            </article>
+          ))}
+          {upcomingReminders.length === 0 ? <p>No follow-up reminders scheduled.</p> : null}
+        </div>
+      </section>
+
+      <section className="card crm-wide">
+        <div className="header-row">
+          <h2>Sales Record</h2>
+          <button onClick={() => setSales((rows) => [...rows, blankSale(selectedAccountId)])}>Add Sale</button>
+        </div>
+        <div className="crm-table">
+          <strong>Buyer</strong>
+          <strong>Date</strong>
+          <strong>Product</strong>
+          <strong>Quantity</strong>
+          <strong>Price</strong>
+          <strong>Total</strong>
+          <strong>Delivery Date</strong>
+          {sales.map((sale) => (
+            <div key={sale.id} className="crm-table-row">
+              <select value={sale.accountId} onChange={(e) => setSales((rows) => rows.map((row) => row.id === sale.id ? { ...row, accountId: e.target.value } : row))}>
+                <option value="">Select buyer</option>
+                {accounts.map((account) => <option key={`sale-account-${sale.id}-${account.id}`} value={account.id}>{accountName(account.id)}</option>)}
+              </select>
+              <input type="date" value={sale.date} onChange={(e) => setSales((rows) => rows.map((row) => row.id === sale.id ? { ...row, date: e.target.value } : row))} />
+              <input value={sale.product} onChange={(e) => setSales((rows) => rows.map((row) => row.id === sale.id ? { ...row, product: e.target.value } : row))} />
+              <input value={sale.quantity} onChange={(e) => setSales((rows) => rows.map((row) => row.id === sale.id ? { ...row, quantity: e.target.value } : row))} />
+              <input value={sale.price} onChange={(e) => setSales((rows) => rows.map((row) => row.id === sale.id ? { ...row, price: e.target.value } : row))} />
+              <input value={sale.total} onChange={(e) => setSales((rows) => rows.map((row) => row.id === sale.id ? { ...row, total: e.target.value } : row))} />
+              <input type="date" value={sale.deliveryDate} onChange={(e) => setSales((rows) => rows.map((row) => row.id === sale.id ? { ...row, deliveryDate: e.target.value } : row))} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="card crm-wide">
+        <div className="header-row">
+          <h2>Deliveries</h2>
+          <button onClick={() => setDeliveries((rows) => [...rows, blankDelivery(selectedAccountId)])}>Add Delivery</button>
+        </div>
+        <div className="crm-table crm-delivery-table">
+          <strong>Buyer</strong>
+          <strong>Date</strong>
+          <strong>Product</strong>
+          <strong>Quantity</strong>
+          <strong>Status</strong>
+          {deliveries.map((delivery) => (
+            <div key={delivery.id} className="crm-table-row">
+              <select value={delivery.accountId} onChange={(e) => setDeliveries((rows) => rows.map((row) => row.id === delivery.id ? { ...row, accountId: e.target.value } : row))}>
+                <option value="">Select buyer</option>
+                {accounts.map((account) => <option key={`delivery-account-${delivery.id}-${account.id}`} value={account.id}>{accountName(account.id)}</option>)}
+              </select>
+              <input type="date" value={delivery.date} onChange={(e) => setDeliveries((rows) => rows.map((row) => row.id === delivery.id ? { ...row, date: e.target.value } : row))} />
+              <input value={delivery.product} onChange={(e) => setDeliveries((rows) => rows.map((row) => row.id === delivery.id ? { ...row, product: e.target.value } : row))} />
+              <input value={delivery.quantity} onChange={(e) => setDeliveries((rows) => rows.map((row) => row.id === delivery.id ? { ...row, quantity: e.target.value } : row))} />
+              <select value={delivery.status} onChange={(e) => setDeliveries((rows) => rows.map((row) => row.id === delivery.id ? { ...row, status: e.target.value } : row))}>
+                <option>Scheduled</option>
+                <option>Delivered</option>
+                <option>Needs follow-up</option>
+              </select>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CeoCompanyDashboardPage({ controller }: { controller: AppController }) {
+  const allMessages = userRoles.flatMap((role) => controller.inboxByRole[role].map((message) => ({ ...message, inboxRole: role })));
+  const actionMessages = allMessages.filter((message) => message.actionRequired || !message.isRead);
+  const incompleteTasks = assessmentTracks.flatMap((track) =>
+    [
+      ...controller.thisWeekByTrack[track],
+      ...controller.explicitNextByTrack[track],
+      ...controller.overflowByTrack[track],
+    ]
+      .filter((task) => !task.completed)
+      .map((task) => ({ ...task, sourceTrack: track })),
+  );
+
+  return (
+    <div className="dashboard-grid">
+      <section className="card dashboard-wide">
+        <h2>CEO Company Dashboard</h2>
+        <p className="muted">Company-wide inbox, role concerns, and incomplete task alerts.</p>
+      </section>
+      <section className="card">
+        <h2>Role Emails and Concerns</h2>
+        <div className="calendar-list">
+          {actionMessages.map((message) => (
+            <article key={`${message.inboxRole}-${message.id}`} className={`calendar-item ${message.isRead ? 'read' : 'unread'}`}>
+              <strong>{message.title}</strong>
+              <span>{userRoleLabel[message.fromRole]} to {userRoleLabel[message.toRole]}</span>
+              <span>{message.notes || 'No notes'}</span>
+            </article>
+          ))}
+          {actionMessages.length === 0 ? <p>No open role messages.</p> : null}
+        </div>
+      </section>
+      <section className="card">
+        <h2>Incomplete Task Alerts</h2>
+        <div className="calendar-list">
+          {incompleteTasks.slice(0, 40).map((task) => (
+            <article key={`${task.sourceTrack}-${task.id}`} className="calendar-item">
+              <strong>{task.title}</strong>
+              <span>{trackLabel[task.sourceTrack]} - {task.room}</span>
+              <span>Due: {task.scheduledDateIso || 'No date'}</span>
+            </article>
+          ))}
+          {incompleteTasks.length === 0 ? <p>No incomplete task alerts.</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MasterTaskCalendarPage({
+  controller,
+  recurringTasks,
+  onClearRecurringTasks,
+}: {
+  controller: AppController;
+  recurringTasks: ProducerRecurringTask[];
+  onClearRecurringTasks: () => void;
+}) {
+  const recurringEvents = recurringTasks.map(recurringTaskToWeekTask);
+
+  return (
+    <div className="grid">
+      {controller.canModifyBackend ? (
+        <section className="card producer-supplies-card">
+          <h2>Master Task Calendar Controls</h2>
+          <div className="button-row">
+            <button
+              onClick={() => {
+                const confirmed = window.confirm('Clear all Producer scheduled tasks and calendar history?');
+                if (!confirmed) return;
+                controller.clearRoleScheduleHistory('producer', {
+                  clearSchedules: true,
+                  clearCalendarHistory: true,
+                });
+              }}
+            >
+              Clear Scheduled Tasks
+            </button>
+            <button
+              onClick={() => {
+                const confirmed = window.confirm('Clear all Producer recurring tasks?');
+                if (!confirmed) return;
+                onClearRecurringTasks();
+              }}
+            >
+              Clear Recurring Tasks
+            </button>
+          </div>
+        </section>
+      ) : null}
+      <CalendarPage
+        controller={controller}
+        title="Master Task Calendar"
+        extraTasks={recurringEvents}
+      />
+    </div>
+  );
+}
+
+function ProducerRecurringTasksPage({
+  controller,
+  recurringTasks,
+  onUpdate,
+  onRemove,
+}: {
+  controller: AppController;
+  recurringTasks: ProducerRecurringTask[];
+  onUpdate: (task: ProducerRecurringTask) => void;
+  onRemove: (templateId: string) => void;
+}) {
+  const [editingRecurringTemplate, setEditingRecurringTemplate] = useState<AssessmentTemplate | null>(null);
+  const recurringSortIndex = (task: ProducerRecurringTask): number => {
+    const haystack = `${task.category} ${task.title}`.trim().toLowerCase();
+    if (haystack.includes('mother')) return 0;
+    if (haystack.includes('clone')) return 1;
+    if (haystack.includes('2 gal') || haystack.includes('two gal')) return 2;
+    if (haystack.includes('flower')) return 3;
+    return 4;
+  };
+  const sortedRecurringTasks = [...recurringTasks].sort((a, b) => {
+    const categoryOrder = recurringSortIndex(a) - recurringSortIndex(b);
+    if (categoryOrder !== 0) return categoryOrder;
+    return a.title.localeCompare(b.title);
+  });
+  const events = recurringTasks.map((task) => ({
+    id: `recurring-${task.templateId}`,
+    title: `${task.title} (${task.frequency})`,
+    dateIso: nextRecurringIso(task),
+  }));
+
+  return (
+    <div className="grid">
+      <section className="card producer-supplies-card">
+        <h2>Recurring Task List</h2>
+        <div className="producer-five-task-list">
+          {sortedRecurringTasks.map((task, index) => (
+            <article key={task.templateId} className="producer-question-row">
+              <div className={`producer-question-label ${controller.canModifyBackend ? 'backend-open' : ''}`}>
+                <strong>{index + 1}.</strong>
+                {controller.canModifyBackend ? (
+                  <span className="producer-question-title-actions">
+                    <button
+                      type="button"
+                      className="edit-mini-button"
+                      onClick={() => {
+                        const template = controller.templates.find((item) => item.id === task.templateId);
+                        if (!template) {
+                          alert('This recurring task no longer has a matching task template.');
+                          return;
+                        }
+                        setEditingRecurringTemplate({
+                          ...template,
+                          autoScheduledTasks: sortAutoTaskDrafts(template.autoScheduledTasks),
+                        });
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="delete-mini-button"
+                      onClick={() => {
+                        const confirmed = window.confirm(`Permanently delete task: "${task.title}"?`);
+                        if (!confirmed) return;
+                        controller.deleteTemplate(task.templateId);
+                        onRemove(task.templateId);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </span>
+                ) : null}
+                <span>{task.category}</span>
+                <span>{task.title}</span>
+              </div>
+              <div className="producer-question-days">
+                {UI.dayLabels.map((label, weekday) => (
+                  <button
+                    key={`recurring-day-${task.templateId}-${label}`}
+                    type="button"
+                    className={`day-pill ${task.weekday === weekday ? 'active-day' : ''}`}
+                    disabled={!controller.canModifyBackend}
+                    onClick={() => onUpdate({ ...task, weekday })}
+                  >
+                    {label.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+              <label className="producer-question-hours">
+                Hours
+                <select
+                  value={task.hours}
+                  disabled={!controller.canModifyBackend}
+                  onChange={(event) => onUpdate({ ...task, hours: Number(event.target.value) })}
+                >
+                  {UI.hourStepOptions().map((value) => (
+                    <option key={`recurring-list-hours-${task.templateId}-${value}`} value={value}>
+                      {controller.formatHoursLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="producer-question-actions recurring-task-list-actions">
+                <select
+                  value={task.frequency}
+                  disabled={!controller.canModifyBackend}
+                  onChange={(event) => onUpdate({ ...task, frequency: event.target.value as RecurringFrequency })}
+                >
+                  {recurringFrequencyOptions.map(([value, label]) => (
+                    <option key={`recurring-list-frequency-${task.templateId}-${value}`} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="time"
+                  value={task.time}
+                  disabled={!controller.canModifyBackend}
+                  onChange={(event) => onUpdate({ ...task, time: event.target.value })}
+                />
+                <input
+                  type="date"
+                  value={task.startDateIso}
+                  disabled={!controller.canModifyBackend}
+                  onChange={(event) => {
+                    const nextDate = new Date(`${event.target.value}T00:00:00`);
+                    onUpdate({
+                      ...task,
+                      startDateIso: event.target.value,
+                      weekday: Number.isNaN(nextDate.getTime()) ? task.weekday : (nextDate.getDay() + 6) % 7,
+                    });
+                  }}
+                />
+              </div>
+              <div className="producer-recurring-controls">
+                <button type="button" className="active-toggle" disabled>
+                  Recurring
+                </button>
+                <span>P{task.priority}</span>
+              </div>
+            </article>
+          ))}
+          {recurringTasks.length === 0 ? <p>No recurring tasks selected yet.</p> : null}
+        </div>
+      </section>
+      <TwoMonthTimelineCalendar
+        title="Recurring Task Calendar"
+        description="Recurring Producer tasks only."
+        events={events}
+        emptyMessage="No recurring tasks selected yet."
+      />
+      {editingRecurringTemplate ? (
+        <Modal title="Edit Recurring Task" onClose={() => setEditingRecurringTemplate(null)}>
+          <form
+            className="form-grid recurring-editor-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              controller.updateTemplate(editingRecurringTemplate);
+              const existingRecurringTask = recurringTasks.find(
+                (task) => task.templateId === editingRecurringTemplate.id,
+              );
+              if (existingRecurringTask) {
+                onUpdate({
+                  ...existingRecurringTask,
+                  title: editingRecurringTemplate.title,
+                  room: editingRecurringTemplate.room,
+                  category: categoryDisplayName(editingRecurringTemplate.category),
+                  hours: editingRecurringTemplate.defaultHours,
+                  priority: editingRecurringTemplate.priority,
+                });
+              }
+              setEditingRecurringTemplate(null);
+            }}
+          >
+            <label className="full-span">
+              Task title
+              <input
+                value={editingRecurringTemplate.title}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    title: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Category
+              <input
+                value={editingRecurringTemplate.category}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    category: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Room
+              <input
+                value={editingRecurringTemplate.room}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    room: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Priority
+              <select
+                value={editingRecurringTemplate.priority}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    priority: Number(e.target.value),
+                  })
+                }
+              >
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={`recurring-edit-priority-${value}`} value={value}>
+                    Priority {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Default hours
+              <select
+                value={editingRecurringTemplate.defaultHours}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    defaultHours: Number(e.target.value),
+                  })
+                }
+              >
+                {UI.hourStepOptions().map((value) => (
+                  <option key={`recurring-edit-hours-${value}`} value={value}>
+                    {controller.formatHoursLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Data recipient
+              <select
+                value={editingRecurringTemplate.dataRecipientRole}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    dataRecipientRole: e.target.value as UserRole,
+                  })
+                }
+              >
+                {userRoles.map((role) => (
+                  <option key={`recurring-edit-recipient-${role}`} value={role}>
+                    {userRoleLabel[role]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check-row producer-edit-check">
+              <input
+                type="checkbox"
+                checked={editingRecurringTemplate.sendDataToSpecificEmployee}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    sendDataToSpecificEmployee: e.target.checked,
+                  })
+                }
+              />
+              <span>Send data/message to recipient</span>
+            </label>
+            <label className="check-row producer-edit-check">
+              <input
+                type="checkbox"
+                checked={editingRecurringTemplate.allowVoiceDictation}
+                onChange={(e) =>
+                  setEditingRecurringTemplate({
+                    ...editingRecurringTemplate,
+                    allowVoiceDictation: e.target.checked,
+                  })
+                }
+              />
+              <span>Allow voice dictation</span>
+            </label>
+            <div className="button-row full-span">
+              <button type="submit">Save Task</button>
+              <button type="button" onClick={() => setEditingRecurringTemplate(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+function recurringTaskToWeekTask(task: ProducerRecurringTask): WeekTask {
+  return {
+    id: `recurring-${task.templateId}`,
+    track: 'producer',
+    sourceTemplateId: task.templateId,
+    title: `${task.title} (${recurringFrequencyLabels[task.frequency]})`,
+    room: task.room,
+    category: task.category,
+    priority: task.priority,
+    estimatedHours: task.hours,
+    day: task.weekday,
+    completed: false,
+    fromOverflow: false,
+    isFollowUp: false,
+    sendCompletionMessage: false,
+    completionNotifyRole: 'generalManager',
+    completionActionRequiredByDefault: false,
+    sendDataToSpecificEmployee: false,
+    dataRecipientRole: 'producer',
+    allowVoiceDictation: false,
+    dataSubmitted: false,
+    defaultDataEntryText: '',
+    scheduledDateIso: nextRecurringIso(task),
+  };
+}
+
+function nextRecurringIso(task: ProducerRecurringTask): string {
+  const date = task.startDateIso ? new Date(`${task.startDateIso}T00:00:00`) : new Date();
+  date.setHours(0, 0, 0, 0);
+  if (task.frequency === 'daily') return toIso(date);
+  const currentMonZero = (date.getDay() + 6) % 7;
+  const offset = (task.weekday - currentMonZero + 7) % 7;
+  date.setDate(date.getDate() + offset);
+  return toIso(date);
+}
+
 function CeoSupplyRequestsPage({ controller }: { controller: AppController }) {
   const supplyMessages = controller.inboxByRole.ceoExecutive.filter(
     (message) =>
@@ -1246,25 +1983,6 @@ function ProducerTwoWeekTaskListPage({ controller }: { controller: AppController
   const currentWeekStart = currentWeekStartIso
     ? new Date(`${currentWeekStartIso}T00:00:00`)
     : new Date();
-  const nextWeekStart = new Date(currentWeekStart);
-  nextWeekStart.setDate(currentWeekStart.getDate() + 7);
-  const nextWeekEnd = new Date(nextWeekStart);
-  nextWeekEnd.setDate(nextWeekStart.getDate() + 7);
-
-  const nextWeekTasks = controller.explicitNextByTrack[activeTrack].filter((task) => {
-    if (!task.scheduledDateIso) return false;
-    const date = new Date(`${task.scheduledDateIso}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return false;
-    return date >= nextWeekStart && date < nextWeekEnd;
-  });
-
-  const nextWeekTasksForDay = (dayIndex: number) =>
-    nextWeekTasks
-      .filter((task) => task.day === dayIndex)
-      .sort((a, b) => a.title.localeCompare(b.title));
-
-  const nextWeekDayLoad = (dayIndex: number) =>
-    nextWeekTasksForDay(dayIndex).reduce((sum, task) => sum + task.estimatedHours, 0);
 
   const weekRangeLabel = (weekStart: Date) => {
     const weekEnd = new Date(weekStart);
@@ -1280,22 +1998,19 @@ function ProducerTwoWeekTaskListPage({ controller }: { controller: AppController
 
   return (
     <div className="card summary">
-      <h2>Task List for the Next Two Weeks</h2>
+      <h2>Task List</h2>
       <section className="week-block">
         <h3>This Week <small>{weekRangeLabel(currentWeekStart)}</small></h3>
         <div className="schedule-grid">
-          {UI.dayLabels.map((day, index) => {
-            const load = controller.dayLoad(index);
-            const capClass = load >= 8 ? 'day-over-full' : load >= 7 ? 'day-near-full' : '';
-            return (
-            <div key={`this-${day}`} className={`day-col ${capClass}`}>
+          {UI.dayLabels.map((day, index) => (
+            <div key={`this-${day}`} className="day-col">
               <div className="day-head">
                 <h4>
                   {day}
                   <span className="day-date-small">{dayDateLabel(currentWeekStart, index)}</span>
                 </h4>
                 <span className="day-load-small">
-                  {load.toFixed(1)} / 8h
+                  {controller.dayLoad(index).toFixed(1)} / 8h
                 </span>
               </div>
               {controller.tasksForDay(index).map((task) => (
@@ -1303,14 +2018,14 @@ function ProducerTwoWeekTaskListPage({ controller }: { controller: AppController
                   <input
                     type="checkbox"
                     checked={task.completed}
-                    disabled={task.completed && !roleCanAdmin(controller.selectedRole)}
+                    disabled={task.completed && !controller.canModifyBackend}
                     onChange={(e) => {
                       const ok = controller.toggleThisWeekCompletion(task.id, e.target.checked);
                       if (!ok && e.target.checked) {
                         alert('Send required task data/message before marking this task complete.');
                       }
                       if (!ok && !e.target.checked) {
-                        alert('Completed tasks are locked. Only Admin can modify them.');
+                        alert('Completed tasks are locked. Select Admin to modify them.');
                       }
                     }}
                   />
@@ -1320,51 +2035,7 @@ function ProducerTwoWeekTaskListPage({ controller }: { controller: AppController
                 </label>
               ))}
             </div>
-            );
-          })}
-        </div>
-      </section>
-      <section className="week-block">
-        <h3>Next Week <small>{weekRangeLabel(nextWeekStart)}</small></h3>
-        <div className="schedule-grid">
-          {UI.dayLabels.map((day, index) => {
-            const load = nextWeekDayLoad(index);
-            const capClass = load >= 8 ? 'day-over-full' : load >= 7 ? 'day-near-full' : '';
-            return (
-            <div key={`next-${day}`} className={`day-col ${capClass}`}>
-              <div className="day-head">
-                <h4>
-                  {day}
-                  <span className="day-date-small">{dayDateLabel(nextWeekStart, index)}</span>
-                </h4>
-                <span className="day-load-small">
-                  {load.toFixed(1)} / 8h
-                </span>
-              </div>
-              {nextWeekTasksForDay(index).map((task) => (
-                <label key={task.id} className="check-row">
-                  <input
-                    type="checkbox"
-                    checked={task.completed}
-                    disabled={task.completed && !roleCanAdmin(controller.selectedRole)}
-                    onChange={(e) => {
-                      const ok = controller.toggleNextWeekCompletion(task.id, e.target.checked);
-                      if (!ok && e.target.checked) {
-                        alert('Send required task data/message before marking this task complete.');
-                      }
-                      if (!ok && !e.target.checked) {
-                        alert('Completed tasks are locked. Only Admin can modify them.');
-                      }
-                    }}
-                  />
-                  <span>
-                    {task.title} ({controller.formatHoursLabel(task.estimatedHours)})
-                  </span>
-                </label>
-              ))}
-            </div>
-            );
-          })}
+          ))}
         </div>
       </section>
       {controller.overflowTasks.length > 0 ? (
@@ -1424,6 +2095,7 @@ function TwoMonthTimelineCalendar({
             return (
               <section key={`${keyPrefix}-${iso}`} className={`month-cell ${inCurrentMonth ? '' : 'outside-month'}`}>
                 <h3>{date.getDate()}</h3>
+                {dayEvents.length === 0 ? <p className="muted">No actions</p> : null}
                 {dayEvents.map((event) => (
                   <article key={event.id} className="calendar-item calendar-item-tight">
                     <strong>{event.title}</strong>
@@ -1528,6 +2200,51 @@ function TwoGalsChartPage({ controller }: { controller: AppController }) {
   );
 }
 
+function CloneCalendarPage({ controller }: { controller: AppController }) {
+  const source = controller.allScheduledCalendarTasksForActiveTrack();
+  const events = source
+    .filter((task) => task.completed && Boolean(task.scheduledDateIso))
+    .filter((task) => {
+      const haystack = `${task.room} ${task.category} ${task.title}`.toLowerCase();
+      return haystack.includes('clone');
+    })
+    .map((task) => ({
+      id: `clone-${task.id}`,
+      title: task.title,
+      dateIso: task.scheduledDateIso,
+    }));
+
+  return (
+    <TwoMonthTimelineCalendar
+      title="Clone Calendar"
+      description="Completed clone tasks are plotted by date in 2-month increments."
+      events={events}
+      emptyMessage="No completed clone actions yet."
+    />
+  );
+}
+
+function DryingRoomCalendarPage({ controller }: { controller: AppController }) {
+  const source = controller.allScheduledCalendarTasksForActiveTrack();
+  const events = source
+    .filter((task) => task.completed && Boolean(task.scheduledDateIso))
+    .filter((task) => normalized(task.room).includes('drying room'))
+    .map((task) => ({
+      id: `drying-${task.id}`,
+      title: task.title,
+      dateIso: task.scheduledDateIso,
+    }));
+
+  return (
+    <TwoMonthTimelineCalendar
+      title="Drying Room Calendar"
+      description="Completed Drying Room tasks are plotted by date in 2-month increments."
+      events={events}
+      emptyMessage="No completed Drying Room actions yet."
+    />
+  );
+}
+
 function FlowerRoomRowChartPage({ controller }: { controller: AppController }) {
   const [selectedRow, setSelectedRow] = useState<number | null>(9);
   const allRowTasks = controller.allFlowerRoomLifecycleTasks();
@@ -1604,6 +2321,27 @@ function FlowerRoomRowChartPage({ controller }: { controller: AppController }) {
     return out;
   }, [completedByRow, tasksByRow]);
 
+  const actionSummariesByRow = useMemo(() => {
+    const grouped: Record<number, WeekTask[]> = {
+      1: [],
+      2: [],
+      3: [],
+      4: [],
+      5: [],
+      6: [],
+      7: [],
+      8: [],
+      9: [],
+    };
+    for (const row of flowerRowOrder) {
+      grouped[row] = tasksByRow[row]
+        .slice()
+        .sort((a, b) => (a.scheduledDateIso || '').localeCompare(b.scheduledDateIso || '') || a.title.localeCompare(b.title))
+        .slice(0, 4);
+    }
+    return grouped;
+  }, [tasksByRow]);
+
   const selectedCompletedTasks = useMemo(
     () => (selectedRow ? completedByRow[selectedRow] ?? [] : []),
     [completedByRow, selectedRow],
@@ -1643,30 +2381,56 @@ function FlowerRoomRowChartPage({ controller }: { controller: AppController }) {
     return date.toLocaleDateString();
   };
 
+  const formatCompactIso = (iso: string | null) => {
+    if (!iso) return 'No date';
+    const date = new Date(`${iso}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+  };
+
   return (
     <>
       <div className="card flower-layout-card">
         <h2>Flower Room Calendar by Row</h2>
         <p className="muted">
-          Tap a row to expand/collapse. Each row shows transplant date stamp and completed action count.
+          Tap a row to expand/collapse. Each row shows transplant date stamp and scheduled action summary.
         </p>
         <div className="flower-layout-grid">
-          {flowerRowOrder.map((row) => (
-            <button
-              key={`flower-row-calendar-${row}`}
-              type="button"
-              className={`flower-row-tile ${selectedRow === row ? 'active' : ''}`}
-              onClick={() => setSelectedRow((current) => (current === row ? null : row))}
-            >
-              <strong>Row {row}</strong>
-              <span>
-                {latestTransferByRow[row]
-                  ? `Transplant date stamp: ${formatIso(latestTransferByRow[row])}`
-                  : 'No transplant date recorded'}
-              </span>
-              <span>{completedByRow[row].length} completed row action(s)</span>
-            </button>
-          ))}
+          {flowerRowOrder.map((row) => {
+            const rowActionSummaries = actionSummariesByRow[row];
+            const remainingActionCount = Math.max(0, tasksByRow[row].length - rowActionSummaries.length);
+            return (
+              <button
+                key={`flower-row-calendar-${row}`}
+                type="button"
+                className={`flower-row-tile ${selectedRow === row ? 'active' : ''}`}
+                onClick={() => setSelectedRow((current) => (current === row ? null : row))}
+              >
+                <strong>Row {row}</strong>
+                <span>
+                  {latestTransferByRow[row]
+                    ? `Transplant date stamp: ${formatIso(latestTransferByRow[row])}`
+                    : 'No transplant date recorded'}
+                </span>
+                <span>{completedByRow[row].length} completed row action(s)</span>
+                <span className="flower-row-action-summary">
+                  {rowActionSummaries.length === 0 ? (
+                    <span className="flower-row-empty-summary">No scheduled row actions</span>
+                  ) : (
+                    rowActionSummaries.map((task) => (
+                      <span key={`row-summary-${row}-${task.id}`} className="flower-row-action-line">
+                        <span className="flower-row-action-title">{task.title}</span>
+                        <span className="flower-row-action-date">{formatCompactIso(task.scheduledDateIso)}</span>
+                      </span>
+                    ))
+                  )}
+                  {remainingActionCount > 0 ? (
+                    <span className="flower-row-more-actions">+{remainingActionCount} more</span>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
       {selectedRow ? (
@@ -1711,962 +2475,53 @@ function FlowerRoomRowChartPage({ controller }: { controller: AppController }) {
   );
 }
 
-function FlowerSalesPage({ controller }: { controller: AppController }) {
-  const [showEnterInventory, setShowEnterInventory] = useState(false);
-  const [showRecordSale, setShowRecordSale] = useState(false);
-  const [strainName, setStrainName] = useState('');
-  const [weightLbs, setWeightLbs] = useState('1');
-  const [suggestedRetailPrice, setSuggestedRetailPrice] = useState('0');
-  const [soldLotId, setSoldLotId] = useState('');
-  const [soldTo, setSoldTo] = useState('');
-  const [soldPricePerPound, setSoldPricePerPound] = useState('0');
-  const [soldDateIso, setSoldDateIso] = useState(() => new Date().toISOString().slice(0, 10));
-  const [appointmentDateIso, setAppointmentDateIso] = useState(() => new Date().toISOString().slice(0, 10));
-  const [appointmentCustomer, setAppointmentCustomer] = useState('');
-  const [appointmentStrain, setAppointmentStrain] = useState('');
-  const [appointmentWeight, setAppointmentWeight] = useState('');
-  const [appointmentNotes, setAppointmentNotes] = useState('');
-  const [monthCursor, setMonthCursor] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-
-  const availableLots = controller.flowerSalesAvailableInventory;
-  const soldLots = controller.flowerSalesSoldLots;
-  const appointments = controller.flowerSalesAppointmentsForView;
-  const appointmentsByDate = appointments.reduce<Record<string, typeof appointments>>((acc, item) => {
-    if (!acc[item.appointmentDateIso]) acc[item.appointmentDateIso] = [];
-    acc[item.appointmentDateIso].push(item);
-    return acc;
-  }, {});
-  const monthDays = monthGridDays(monthCursor);
-
-  return (
-    <div className="grid">
-      <div className="card">
-        <div className="header-row">
-          <h2>Flower Sales Dashboard</h2>
-          <div className="button-row">
-            <button onClick={() => setShowEnterInventory((v) => !v)}>Enter flower available for sale</button>
-            <button onClick={() => setShowRecordSale((v) => !v)}>Flower sold, price sold for</button>
-          </div>
-        </div>
-
-        {showEnterInventory ? (
-          <div className="form-grid">
-            <label>
-              Strain name
-              <input value={strainName} onChange={(e) => setStrainName(e.target.value)} />
-            </label>
-            <label>
-              Weight (lbs)
-              <input
-                type="number"
-                min={0.01}
-                step={0.01}
-                value={weightLbs}
-                onChange={(e) => setWeightLbs(e.target.value)}
-              />
-            </label>
-            <label>
-              Suggested retail price
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={suggestedRetailPrice}
-                onChange={(e) => setSuggestedRetailPrice(e.target.value)}
-              />
-            </label>
-            <button
-              onClick={() => {
-                const ok = controller.addFlowerInventoryLot({
-                  strainName,
-                  weightLbs: Number(weightLbs),
-                  suggestedRetailPrice: Number(suggestedRetailPrice),
-                });
-                if (!ok) {
-                  alert('Enter valid strain name, weight, and suggested retail price.');
-                  return;
-                }
-                setStrainName('');
-                setWeightLbs('1');
-                setSuggestedRetailPrice('0');
-              }}
-            >
-              Save flower bag
-            </button>
-          </div>
-        ) : null}
-
-        {showRecordSale ? (
-          <div className="form-grid">
-            <label>
-              Flower bag / strain
-              <select value={soldLotId} onChange={(e) => setSoldLotId(e.target.value)}>
-                <option value="">Select available bag</option>
-                {availableLots.map((lot) => (
-                  <option key={lot.id} value={lot.id}>
-                    {lot.strainName} - {lot.weightLbs.toFixed(2)} lbs - Suggested ${lot.suggestedRetailPrice.toFixed(2)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Who it was sold to
-              <input value={soldTo} onChange={(e) => setSoldTo(e.target.value)} />
-            </label>
-            <label>
-              Price per pound sold
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={soldPricePerPound}
-                onChange={(e) => setSoldPricePerPound(e.target.value)}
-              />
-            </label>
-            <label>
-              Date sold
-              <input type="date" value={soldDateIso} onChange={(e) => setSoldDateIso(e.target.value)} />
-            </label>
-            <button
-              onClick={() => {
-                const ok = controller.recordFlowerLotSale({
-                  lotId: soldLotId,
-                  soldTo,
-                  soldPricePerPound: Number(soldPricePerPound),
-                  soldDateIso,
-                });
-                if (!ok) {
-                  alert('Select a lot and enter sold to, sold price per pound, and date.');
-                  return;
-                }
-                setSoldLotId('');
-                setSoldTo('');
-                setSoldPricePerPound('0');
-                setSoldDateIso(new Date().toISOString().slice(0, 10));
-              }}
-            >
-              Record sale
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="card">
-        <h2>Running Inventory</h2>
-        <p className="muted">Available flower bags for sale</p>
-        {availableLots.length === 0 ? <p className="muted">No available flower inventory.</p> : null}
-        <div className="calendar-list">
-          {availableLots.map((lot) => (
-            <article key={lot.id} className="calendar-item">
-              <strong>{lot.strainName}</strong>
-              <span>Weight: {lot.weightLbs.toFixed(2)} lbs</span>
-              <span>Suggested retail price: ${lot.suggestedRetailPrice.toFixed(2)}</span>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Sold Flower Log</h2>
-        {soldLots.length === 0 ? <p className="muted">No sold flower lots recorded yet.</p> : null}
-        <div className="calendar-list">
-          {soldLots.map((lot) => (
-            <article key={lot.id} className="calendar-item">
-              <strong>{lot.strainName}</strong>
-              <span>Weight: {lot.weightLbs.toFixed(2)} lbs</span>
-              <span>Sold to: {lot.soldTo ?? 'N/A'}</span>
-              <span>Price per pound sold: ${lot.soldPricePerPound?.toFixed(2) ?? '0.00'}</span>
-              <span>Date sold: {lot.soldDateIso ?? 'N/A'}</span>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Flower Sales Delivery Appointments</h2>
-        <div className="form-grid">
-          <label>
-            Appointment date
-            <input type="date" value={appointmentDateIso} onChange={(e) => setAppointmentDateIso(e.target.value)} />
-          </label>
-          <label>
-            Sold to / customer
-            <input value={appointmentCustomer} onChange={(e) => setAppointmentCustomer(e.target.value)} />
-          </label>
-          <label>
-            Strain name
-            <input value={appointmentStrain} onChange={(e) => setAppointmentStrain(e.target.value)} />
-          </label>
-          <label>
-            Weight (lbs)
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              value={appointmentWeight}
-              onChange={(e) => setAppointmentWeight(e.target.value)}
-              placeholder="Optional"
-            />
-          </label>
-          <label>
-            Notes
-            <input value={appointmentNotes} onChange={(e) => setAppointmentNotes(e.target.value)} />
-          </label>
-          <button
-            onClick={() => {
-              const ok = controller.addFlowerSalesAppointment({
-                appointmentDateIso,
-                customerName: appointmentCustomer,
-                notes: appointmentNotes,
-                strainName: appointmentStrain,
-                weightLbs: appointmentWeight ? Number(appointmentWeight) : null,
-              });
-              if (!ok) {
-                alert('Enter appointment date and customer.');
-                return;
-              }
-              setAppointmentCustomer('');
-              setAppointmentStrain('');
-              setAppointmentWeight('');
-              setAppointmentNotes('');
-            }}
-          >
-            Add appointment
-          </button>
-        </div>
-        <div className="month-nav">
-          <h3>
-            {monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-          </h3>
-          <div className="button-row">
-            <button onClick={() => setMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>
-              Previous Month
-            </button>
-            <button onClick={() => setMonthCursor((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}>
-              Next Month
-            </button>
-          </div>
-        </div>
-        <div className="month-grid">
-          {UI.dayLabels.map((label) => (
-            <div key={`flower-sales-head-${label}`} className="month-head">{label}</div>
-          ))}
-          {monthDays.map((date) => {
-            const iso = toIso(date);
-            const dayAppointments = appointmentsByDate[iso] ?? [];
-            const inCurrentMonth = date.getMonth() === monthCursor.getMonth();
-            return (
-              <section key={`flower-sales-${iso}`} className={`month-cell ${inCurrentMonth ? '' : 'outside-month'}`}>
-                <h3>{date.getDate()}</h3>
-                {dayAppointments.map((appt) => (
-                  <article key={appt.id} className="calendar-item calendar-item-tight">
-                    <strong>{appt.customerName}</strong>
-                    <span>{appt.strainName || 'Flower delivery'}</span>
-                    {appt.weightLbs ? <span>{appt.weightLbs.toFixed(2)} lbs</span> : null}
-                  </article>
-                ))}
-              </section>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProducerAmendSoilCalculatorPage() {
-  const defaultTargets = soilMetricTemplates.map((metric) => ({
-    ...metric,
-  }));
-  const emptyRowValues = flowerRowOrder.reduce<Record<number, Record<string, string>>>((acc, row) => {
-    acc[row] = soilMetricTemplates.reduce<Record<string, string>>((metricAcc, metric) => {
-      metricAcc[metric.key] = '';
-      return metricAcc;
-    }, {});
-    return acc;
-  }, {});
-  const [targets, setTargets] = useState(defaultTargets);
-  const [rowValues, setRowValues] = useState<Record<number, Record<string, string>>>(emptyRowValues);
-  const [parsedAmendmentsByRow, setParsedAmendmentsByRow] = useState<Record<number, Array<{ amendment: string; pounds: number }>>>({
-    1: [
-      { amendment: 'Soft rock phosphate', pounds: 3.2 },
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.4 },
-      { amendment: 'Gypsum', pounds: 4.0 },
-      { amendment: 'Dolomite lime', pounds: 1.8 },
-      { amendment: 'Manganese sulfate', pounds: 0.15 },
-      { amendment: 'Iron sulfate', pounds: 0.12 },
-      { amendment: 'Solubor – Boron', pounds: 0.02 },
-    ],
-    2: [
-      { amendment: 'Soft rock phosphate', pounds: 3.5 },
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.2 },
-      { amendment: 'Gypsum', pounds: 3.5 },
-      { amendment: 'Dolomite lime', pounds: 2.0 },
-      { amendment: 'Manganese sulfate', pounds: 0.16 },
-      { amendment: 'Iron sulfate', pounds: 0.13 },
-      { amendment: 'Solubor – Boron', pounds: 0.02 },
-    ],
-    3: [
-      { amendment: 'Soft rock phosphate', pounds: 4.1 },
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.3 },
-      { amendment: 'Gypsum', pounds: 4.2 },
-      { amendment: 'Dolomite lime', pounds: 2.1 },
-      { amendment: 'Manganese sulfate', pounds: 0.15 },
-      { amendment: 'Iron sulfate', pounds: 0.13 },
-      { amendment: 'Solubor – Boron', pounds: 0.02 },
-    ],
-    5: [
-      { amendment: 'Soft rock phosphate', pounds: 3.1 },
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.2 },
-      { amendment: 'Gypsum', pounds: 5.0 },
-      { amendment: 'Dolomite lime', pounds: 3.2 },
-      { amendment: 'Manganese sulfate', pounds: 0.15 },
-      { amendment: 'Iron sulfate', pounds: 0.05 },
-      { amendment: 'Solubor – Boron', pounds: 0.02 },
-    ],
-    6: [
-      { amendment: 'Soft rock phosphate', pounds: 3.3 },
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.6 },
-      { amendment: 'Gypsum', pounds: 5.0 },
-      { amendment: 'Dolomite lime', pounds: 4.0 },
-      { amendment: 'Manganese sulfate', pounds: 0.15 },
-      { amendment: 'Iron sulfate', pounds: 0.06 },
-    ],
-    7: [
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 2.0 },
-      { amendment: 'Gypsum', pounds: 6.0 },
-      { amendment: 'Dolomite lime', pounds: 6.5 },
-      { amendment: 'Manganese sulfate', pounds: 0.14 },
-      { amendment: 'Iron sulfate', pounds: 0.09 },
-      { amendment: 'Solubor – Boron', pounds: 0.02 },
-    ],
-    8: [
-      { amendment: 'Soft rock phosphate', pounds: 2.0 },
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.5 },
-      { amendment: 'Gypsum', pounds: 5.5 },
-      { amendment: 'Dolomite lime', pounds: 5.0 },
-      { amendment: 'Manganese sulfate', pounds: 0.15 },
-      { amendment: 'Iron sulfate', pounds: 0.06 },
-      { amendment: 'Solubor – Boron', pounds: 0.02 },
-    ],
-    9: [
-      { amendment: 'Soft rock phosphate', pounds: 2.2 },
-      { amendment: 'Potassium phosphate MKP 0-52-34', pounds: 1.8 },
-      { amendment: 'Gypsum', pounds: 6.5 },
-      { amendment: 'Dolomite lime', pounds: 6.0 },
-      { amendment: 'Manganese sulfate', pounds: 0.14 },
-      { amendment: 'Solubor – Boron', pounds: 0.02 },
-    ],
-  });
-  const [importStatus, setImportStatus] = useState('');
-  const [filePickerKey, setFilePickerKey] = useState(0);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(producerAmendSoilStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        targets?: Array<Partial<SoilMetricTemplate> & { key: string }>;
-        rowValues?: Record<string, Record<string, string>>;
-      };
-      if (Array.isArray(parsed.targets)) {
-        setTargets((current) =>
-          current.map((metric) => {
-            const stored = parsed.targets?.find((item) => item.key === metric.key);
-            if (!stored) return metric;
-            return {
-              ...metric,
-              targetValue: Number.isFinite(Number(stored.targetValue)) ? Number(stored.targetValue) : metric.targetValue,
-              potencyPerLbPerRow:
-                Number.isFinite(Number(stored.potencyPerLbPerRow)) ? Number(stored.potencyPerLbPerRow) : metric.potencyPerLbPerRow,
-              amendmentName: stored.amendmentName ? String(stored.amendmentName) : metric.amendmentName,
-            };
-          }),
-        );
-      }
-      if (parsed.rowValues && typeof parsed.rowValues === 'object') {
-        setRowValues((current) => {
-          const next = { ...current };
-          for (const row of flowerRowOrder) {
-            const source = parsed.rowValues?.[String(row)];
-            if (!source || typeof source !== 'object') continue;
-            next[row] = {
-              ...next[row],
-              ...source,
-            };
-          }
-          return next;
-        });
-      }
-    } catch {
-      // ignore invalid local calculator state
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(
-      producerAmendSoilStorageKey,
-      JSON.stringify({
-        targets,
-        rowValues,
-      }),
-    );
-  }, [targets, rowValues]);
-
-  const parseLoganLabsText = (text: string) => {
-    const normalizedText = text.replace(/\u00a0/g, ' ');
-    const metricMappings: Array<{ key: string; regex: RegExp }> = [
-      { key: 'ph', regex: /pH\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?5\.7-6\.4/gs },
-      { key: 'cec', regex: /Exchange\s+Capacity\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?20-50/gs },
-      { key: 'om', regex: /Organic\s+Matter\s+([0-9.>%]+).*?([0-9.>%]+).*?([0-9.>%]+).*?10-15/gs },
-      { key: 'phosphorous', regex: /Phosphorous\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?800-1200/gs },
-      { key: 'sulfur', regex: /Sulfur\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?150-250/gs },
-      { key: 'iron', regex: /Iron\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?225-265/gs },
-      { key: 'manganese', regex: /Manganese\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?45-65/gs },
-      { key: 'zinc', regex: /Zinc\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?20-30/gs },
-      { key: 'copper', regex: /Copper\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?5-9/gs },
-      { key: 'boron', regex: /Boron\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?3-6/gs },
-      { key: 'aluminum', regex: /Aluminum\s+([0-9.]+).*?([0-9.]+).*?([0-9.]+).*?<2000/gs },
-    ];
-    const groupedRows: Array<[number, number, number]> = [
-      [1, 2, 3],
-      [5, 6, 7],
-      [8, 9, 0],
-    ];
-    const updates: Record<number, Record<string, string>> = {};
-    for (const mapping of metricMappings) {
-      const matches = Array.from(normalizedText.matchAll(mapping.regex));
-      matches.slice(0, 3).forEach((match, idx) => {
-        const rows = groupedRows[idx];
-        if (!rows) return;
-        const values = [match[1], match[2], match[3]];
-        rows.forEach((row, valueIndex) => {
-          if (row === 0) return;
-          if (!updates[row]) updates[row] = {};
-          updates[row][mapping.key] = values[valueIndex] ? String(values[valueIndex]).replace(/[>%]/g, '') : '';
-        });
-      });
-    }
-
-    const percentageMappings: Array<{ key: string; regex: RegExp }> = [
-      {
-        key: 'potassiumPct',
-        regex: /Potassium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?5-7%/gs,
-      },
-      {
-        key: 'calciumPct',
-        regex: /Calcium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?68-72%/gs,
-      },
-      {
-        key: 'magnesiumPct',
-        regex: /Magnesium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?17-21%/gs,
-      },
-      {
-        key: 'sodiumPct',
-        regex: /Sodium\s+[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?[0-9.]+\s+\(([0-9.]+)%\).*?<3%/gs,
-      },
-    ];
-    for (const mapping of percentageMappings) {
-      const matches = Array.from(normalizedText.matchAll(mapping.regex));
-      matches.slice(0, 3).forEach((match, idx) => {
-        const rows = groupedRows[idx];
-        if (!rows) return;
-        const values = [match[1], match[2], match[3]];
-        rows.forEach((row, valueIndex) => {
-          if (row === 0) return;
-          if (!updates[row]) updates[row] = {};
-          updates[row][mapping.key] = values[valueIndex] ?? '';
-        });
-      });
-    }
-    if (Object.keys(updates).length > 0) {
-      setRowValues((current) => {
-        const next = { ...current };
-        for (const [rowStr, values] of Object.entries(updates)) {
-          const row = Number(rowStr);
-          next[row] = {
-            ...(next[row] ?? {}),
-            ...values,
-          };
-        }
-        return next;
-      });
-    }
-  };
-
-  const handleImportFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const statusParts: string[] = [];
-    for (const file of Array.from(files)) {
-      const name = file.name.toLowerCase();
-      try {
-        if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
-          const buffer = await file.arrayBuffer();
-          const workbook = XLSX.read(buffer, { type: 'array' });
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          const rows = XLSX.utils.sheet_to_json<Array<string | number | null>>(sheet, { header: 1 });
-          const headerRowIndex = rows.findIndex((row) => Array.isArray(row) && String(row[0] ?? '').trim().toLowerCase() === 'row');
-          if (headerRowIndex >= 0) {
-            const header = rows[headerRowIndex] ?? [];
-            const dataRows = rows.slice(headerRowIndex + 1);
-            const parsed: Record<number, Array<{ amendment: string; pounds: number }>> = {};
-            for (const row of dataRows) {
-              const rowLabel = String(row[0] ?? '').trim().toLowerCase();
-              const rowMatch = /row\s*([1-9])/.exec(rowLabel);
-              if (!rowMatch) continue;
-              const rowNumber = Number(rowMatch[1]);
-              const additions: Array<{ amendment: string; pounds: number }> = [];
-              for (let col = 1; col < header.length; col += 1) {
-                const amendment = String(header[col] ?? '').trim();
-                const pounds = Number(row[col] ?? 0);
-                if (!amendment || !Number.isFinite(pounds) || pounds <= 0) continue;
-                additions.push({ amendment, pounds });
-              }
-              parsed[rowNumber] = additions;
-            }
-            setParsedAmendmentsByRow(parsed);
-            statusParts.push(`Parsed amendment rates from ${file.name}`);
-          }
-        } else if (name.endsWith('.pdf')) {
-          const pdfjs = await import('pdfjs-dist');
-          const workerVersion = (pdfjs as { version?: string }).version ?? '4.10.38';
-          (pdfjs as { GlobalWorkerOptions: { workerSrc: string } }).GlobalWorkerOptions.workerSrc =
-            `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${workerVersion}/pdf.worker.min.mjs`;
-          const buffer = await file.arrayBuffer();
-          const loadingTask = (pdfjs as { getDocument: (data: { data: Uint8Array }) => { promise: Promise<{ numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: Array<{ str: string }> }> }> }> } }).getDocument({ data: new Uint8Array(buffer) });
-          const doc = await loadingTask.promise;
-          let text = '';
-          for (let p = 1; p <= doc.numPages; p += 1) {
-            const page = await doc.getPage(p);
-            const content = await page.getTextContent();
-            text += ` ${content.items.map((item) => item.str).join(' ')}`;
-          }
-          parseLoganLabsText(text);
-          statusParts.push(`Parsed Logan Labs PDF metrics from ${file.name}`);
-        } else if (name.endsWith('.eml') || name.endsWith('.txt')) {
-          const text = await file.text();
-          parseLoganLabsText(text);
-          statusParts.push(`Parsed text metrics from ${file.name}`);
-        } else {
-          statusParts.push(`Skipped unsupported file: ${file.name}`);
-        }
-      } catch {
-        statusParts.push(`Could not parse ${file.name}`);
-      }
-    }
-    setImportStatus(statusParts.join(' • '));
-  };
-
-  const recommendationsByRow = flowerRowOrder.map((row) => {
-    const rowEntry = rowValues[row] ?? {};
-    const recommendations = targets
-      .map((metric) => {
-        const parsed = parseSoilNumber(rowEntry[metric.key] ?? '');
-        if (parsed === null) return null;
-        const current = parsed;
-        const needClass = classifySoilNeed(metric, current);
-        const deficit = Math.max(0, metric.targetValue - current);
-        if (needClass === 'Hold / maintenance only' || needClass === 'Stop adding / avoid') {
-          return {
-            key: metric.key,
-            label: metric.label,
-            unit: metric.unit,
-            measured: current,
-            delta: metric.targetValue - current,
-            needClass,
-            deficit,
-            amendmentName: metric.amendmentName,
-            poundsNeeded: 0,
-            poundsPerBed: 0,
-            gramsPerRow: 0,
-            gramsPerBed: 0,
-          };
-        }
-        if (deficit <= 0) return null;
-        const potency = metric.potencyPerLbPerRow > 0 ? metric.potencyPerLbPerRow : 0;
-        const classMultiplier = needClass === 'Raise aggressively' ? 1.25 : 1;
-        const poundsNeeded = potency > 0 ? (deficit / potency) * classMultiplier : 0;
-        const poundsPerBed = poundsNeeded / 5.5;
-        const gramsPerRow = poundsNeeded * 453.592;
-        const gramsPerBed = poundsPerBed * 453.592;
-        return {
-          key: metric.key,
-          label: metric.label,
-          unit: metric.unit,
-          measured: current,
-          delta: metric.targetValue - current,
-          needClass,
-          deficit,
-          amendmentName: metric.amendmentName,
-          poundsNeeded,
-          poundsPerBed,
-          gramsPerRow,
-          gramsPerBed,
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => Boolean(item));
-    return { row, recommendations };
-  });
-
-  const normalizedRows = flowerRowOrder.map((row) => {
-    const rowEntry = rowValues[row] ?? {};
-    const normalized = targets.map((metric) => {
-      const measured = parseSoilNumber(rowEntry[metric.key] ?? '');
-      return {
-        key: metric.key,
-        label: metric.label,
-        measured,
-        unit: metric.unit,
-        group: metric.normalizedGroup,
-      };
-    });
-    return { row, normalized };
-  });
-
-  const bulkIngredientSection = producerResourceSections.find((section) => section.id === 'bulk-ingredients');
-  const soilAmendmentSection = producerResourceSections.find((section) => section.id === 'soil-amendments');
-
-  const normalizeMaterialName = (value: string) =>
-    value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-
-  const importedTotalsByAmendment = Object.values(parsedAmendmentsByRow).reduce<Record<string, number>>(
-    (acc, rowEntries) => {
-      for (const entry of rowEntries) {
-        const key = normalizeMaterialName(entry.amendment);
-        acc[key] = (acc[key] ?? 0) + entry.pounds;
-      }
-      return acc;
-    },
-    {},
-  );
-
-  const calculatedTotalsByAmendment = recommendationsByRow.reduce<Record<string, number>>((acc, row) => {
-    for (const item of row.recommendations) {
-      const key = normalizeMaterialName(item.amendmentName);
-      acc[key] = (acc[key] ?? 0) + item.poundsNeeded;
-    }
-    return acc;
-  }, {});
-
-  const estimatePoundsForMaterial = (label: string): number => {
-    const normalized = normalizeMaterialName(label);
-    const imported = Object.entries(importedTotalsByAmendment).reduce((sum, [key, value]) => {
-      if (key.includes(normalized) || normalized.includes(key)) return sum + value;
-      return sum;
-    }, 0);
-    const calculated = Object.entries(calculatedTotalsByAmendment).reduce((sum, [key, value]) => {
-      if (key.includes(normalized) || normalized.includes(key)) return sum + value;
-      return sum;
-    }, 0);
-    return imported + calculated;
-  };
-
-  return (
-    <div className="grid">
-      <div className="card">
-        <h2>Amend Soil Calculator</h2>
-        <p className="muted">
-          Baseline targets are derived from your Logan Labs report target ranges (12/18/25). Upload Logan Labs PDFs and amendment sheets to auto-fill rows.
-        </p>
-        <div className="form-grid">
-          <div className="button-row">
-            <input
-              key={`soil-upload-${filePickerKey}`}
-              id="soil-upload-file-picker"
-              type="file"
-              multiple
-              accept=".pdf,.xlsx,.xls,.eml,.txt,.doc,.docx"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                void handleImportFiles(e.target.files);
-                setFilePickerKey((k) => k + 1);
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const picker = document.getElementById('soil-upload-file-picker') as HTMLInputElement | null;
-                picker?.click();
-              }}
-            >
-              Upload file
-            </button>
-            <span className="muted">Accepts PDF, email text, XLS/XLSX, DOC/DOCX, and TXT.</span>
-          </div>
-          {importStatus ? <p className="muted">{importStatus}</p> : null}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Layer 1: Target Spec (Fixed Baseline)</h2>
-        <p className="muted">Recommended baseline used for future soil tests.</p>
-        <div className="amend-grid-head amend-grid-row">
-          <span>Analyte</span>
-          <span>Target</span>
-          <span>Range</span>
-          <span>Units</span>
-        </div>
-        {soilMetricTemplates.map((metric) => (
-          <div key={`baseline-${metric.key}`} className="amend-grid-row">
-            <span>{metric.label}</span>
-            <span>{metric.targetValue}</span>
-            <span>{metric.targetMin} - {metric.targetMax}</span>
-            <span>{metric.unit}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="card">
-        <h2>Working Target Overrides</h2>
-        <p className="muted">
-          Optional: adjust target values and amendment potency for custom scenarios.
-        </p>
-        <div className="button-row">
-          <button type="button" onClick={() => setTargets(soilMetricTemplates.map((item) => ({ ...item })))}>
-            Reset to recommended baseline
-          </button>
-        </div>
-        <div className="amend-grid-head amend-grid-row">
-          <span>Soil Component</span>
-          <span>Target</span>
-          <span>Amendment</span>
-          <span>Potency (ppm per lb per row)</span>
-        </div>
-        {targets.map((metric) => (
-          <div key={`target-${metric.key}`} className="amend-grid-row">
-            <span>{metric.label}</span>
-            <input
-              type="number"
-              step={0.01}
-              value={metric.targetValue}
-              onChange={(e) =>
-                setTargets((current) =>
-                  current.map((item) =>
-                    item.key === metric.key
-                      ? { ...item, targetValue: Number(e.target.value) }
-                      : item,
-                  ),
-                )
-              }
-            />
-            <input
-              value={metric.amendmentName}
-              onChange={(e) =>
-                setTargets((current) =>
-                  current.map((item) =>
-                    item.key === metric.key
-                      ? { ...item, amendmentName: e.target.value }
-                      : item,
-                  ),
-                )
-              }
-            />
-            <input
-              type="number"
-              step={0.01}
-              min={0}
-              value={metric.potencyPerLbPerRow}
-              onChange={(e) =>
-                setTargets((current) =>
-                  current.map((item) =>
-                    item.key === metric.key
-                      ? { ...item, potencyPerLbPerRow: Number(e.target.value) }
-                      : item,
-                  ),
-                )
-              }
-            />
-          </div>
-        ))}
-      </div>
-
-      <div className="card">
-        <h2>Logan Labs Input By Row (Rows 9-1)</h2>
-        <div className="calendar-list">
-          {flowerRowOrder.map((row) => (
-            <article key={`row-input-${row}`} className="calendar-item">
-              <strong>Row {row} soil profile</strong>
-              <div className="amend-row-input-grid">
-                {targets.map((metric) => (
-                  <label key={`row-${row}-${metric.key}`}>
-                    {metric.label} ({metric.unit})
-                    <input
-                      type="number"
-                      step={0.01}
-                      value={rowValues[row]?.[metric.key] ?? ''}
-                      onChange={(e) =>
-                        setRowValues((current) => ({
-                          ...current,
-                          [row]: {
-                            ...(current[row] ?? {}),
-                            [metric.key]: e.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Layer 2: Incoming Lab Normalization</h2>
-        <p className="muted">
-          Normalized fields: pH / CEC / OM, base saturation (%), and ppm-style analytes for row-by-row comparison.
-        </p>
-        <div className="calendar-list">
-          {normalizedRows.map((row) => (
-            <article key={`norm-${row.row}`} className="calendar-item">
-              <strong>Row {row.row}</strong>
-              {row.normalized.map((item) => (
-                <span key={`norm-${row.row}-${item.key}`}>
-                  {item.label}: {item.measured === null ? '—' : item.measured.toFixed(2)} {item.unit}
-                </span>
-              ))}
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Layer 3: Delta-To-Target + Recommendation Class</h2>
-        <p className="muted">
-          For each component below target, suggested pounds are calculated as: <code>deficit / potency</code>. Conversion: 1 row = 5.5 beds, 1 lb = 453.592 grams.
-        </p>
-        <div className="calendar-list">
-          {recommendationsByRow.map((rowResult) => (
-            <article key={`recommend-${rowResult.row}`} className="calendar-item">
-              <strong>Row {rowResult.row}</strong>
-              {rowResult.recommendations.length === 0 ? (
-                <span>All entered metrics are at or above target.</span>
-              ) : (
-                rowResult.recommendations.map((item) => (
-                  <span key={`row-${rowResult.row}-${item.key}`}>
-                    {item.label}: measured {item.measured.toFixed(2)} {item.unit}, delta {item.delta.toFixed(2)} ({item.needClass}).
-                    {item.poundsNeeded > 0
-                      ? ` Add ${item.poundsNeeded.toFixed(2)} lb (${item.gramsPerRow.toFixed(0)} g) of ${item.amendmentName} per row, or ${item.poundsPerBed.toFixed(2)} lb (${item.gramsPerBed.toFixed(0)} g) per bed.`
-                      : ' No addition recommended.'}
-                  </span>
-                ))
-              )}
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Imported Amendment Plan (From XLSX)</h2>
-        <p className="muted">
-          Uses uploaded amendment-per-row sheet. Values shown in lb and grams for row and per bed.
-        </p>
-        <div className="calendar-list">
-          {flowerRowOrder.map((row) => {
-            const entries = parsedAmendmentsByRow[row] ?? [];
-            return (
-              <article key={`imported-plan-${row}`} className="calendar-item">
-                <strong>Row {row}</strong>
-                {entries.length === 0 ? (
-                  <span>No imported amendments for this row.</span>
-                ) : (
-                  entries.map((entry, idx) => {
-                    const poundsPerBed = entry.pounds / 5.5;
-                    return (
-                      <span key={`imported-${row}-${idx}`}>
-                        {entry.amendment}: {entry.pounds.toFixed(2)} lb ({(entry.pounds * 453.592).toFixed(0)} g) per row,
-                        {` ${poundsPerBed.toFixed(2)} lb (${(poundsPerBed * 453.592).toFixed(0)} g) per bed`}
-                      </span>
-                    );
-                  })
-                )}
-              </article>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Program Interpretation Summary</h2>
-        <p className="muted">
-          High-priority targets: CEC, Ca saturation, P, K saturation, Mn, Cu, B, Fe.
-          Do not oversupply: Mg, S, Zn, OM.
-        </p>
-        <div className="calendar-list">
-          <article className="calendar-item">
-            <strong>Raise aggressively when far under:</strong>
-            <span>Phosphorus, Ca saturation, K saturation, Mn, Cu, B, Fe (&lt;225), CEC (&lt;20).</span>
-          </article>
-          <article className="calendar-item">
-            <strong>Raise moderately when slightly under:</strong>
-            <span>pH &lt;5.7, Sulfur &lt;150 ppm, Mg saturation &lt;17%.</span>
-          </article>
-          <article className="calendar-item">
-            <strong>Stop/avoid when over target:</strong>
-            <span>Sulfur &gt;250, Zinc &gt;30, Phosphorus &gt;1200, Mg &gt;21%, Sodium approaching 3%, pH &gt;6.4.</span>
-          </article>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Complete Materials Needed</h2>
-        <p className="muted">
-          Combined from Soil Shopping List: Soil Amendments + Bulk Ingredients.
-        </p>
-
-        <h3>Soil Amendments</h3>
-        <div className="calendar-list">
-          {(soilAmendmentSection?.items ?? []).map((item) => {
-            const pounds = estimatePoundsForMaterial(item.label);
-            return (
-              <article key={`amend-list-${item.id}`} className="calendar-item">
-                <strong>{item.label}</strong>
-                <span>{pounds > 0 ? `Estimated total: ${pounds.toFixed(2)} lb (${(pounds * 453.592).toFixed(0)} g)` : 'Estimated total: TBD from uploads / manual inputs'}</span>
-              </article>
-            );
-          })}
-        </div>
-
-        <h3>Bulk Ingredients</h3>
-        <div className="calendar-list">
-          {(bulkIngredientSection?.items ?? []).map((item) => (
-            <article key={`bulk-list-${item.id}`} className="calendar-item">
-              <strong>{item.label}</strong>
-              <span>Include in full soil build inventory planning.</span>
-            </article>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WeeklyPage({ controller }: { controller: AppController }) {
+function WeeklyPage({
+  controller,
+  producerRecurringTasks = [],
+  onUpsertProducerRecurringTask,
+  onRemoveProducerRecurringTask,
+}: {
+  controller: AppController;
+  producerRecurringTasks?: ProducerRecurringTask[];
+  onUpsertProducerRecurringTask?: (task: ProducerRecurringTask) => void;
+  onRemoveProducerRecurringTask?: (templateId: string) => void;
+}) {
   const [showAll, setShowAll] = useState(false);
   const [minimizeAllRooms, setMinimizeAllRooms] = useState(false);
   const [collapsedRooms, setCollapsedRooms] = useState<Record<string, boolean>>({});
-  const [plannerTab, setPlannerTab] = useState<'room' | 'random'>('room');
+  const [producerQuestionIndex, setProducerQuestionIndex] = useState(0);
   const [draftByTemplateId, setDraftByTemplateId] = useState<Record<string, DraftPlan>>({});
-  const [transferQuestionByTemplateId, setTransferQuestionByTemplateId] = useState<Record<string, TransferQuestionDraft>>({});
+  const [recurringEditor, setRecurringEditor] = useState<ProducerRecurringTask | null>(null);
+  const [editingProducerTemplate, setEditingProducerTemplate] = useState<AssessmentTemplate | null>(null);
+  const [newProducerTaskDraft, setNewProducerTaskDraft] = useState<NewProducerTaskDraft | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editDay, setEditDay] = useState(0);
   const [editHours, setEditHours] = useState(1);
   const [editWindow, setEditWindow] = useState<'thisWeek' | 'nextWeek'>('thisWeek');
   const [taskDataMessage, setTaskDataMessage] = useState('');
   const [isVoiceRecording, setIsVoiceRecording] = useState(false);
-  const [customRandomTaskTitle, setCustomRandomTaskTitle] = useState('');
-  const [customRandomTaskHours, setCustomRandomTaskHours] = useState(1);
-  const [customRandomTaskDay, setCustomRandomTaskDay] = useState(0);
   const [showDailyChecklist, setShowDailyChecklist] = useState(false);
   const [dailyChecklistDateIso, setDailyChecklistDateIso] = useState(() => new Date().toISOString().slice(0, 10));
-  const [draggingScheduledTask, setDraggingScheduledTask] = useState<{ taskId: string } | null>(null);
-  const [dragTarget, setDragTarget] = useState<{ scheduleWindow: 'thisWeek' | 'nextWeek'; dayIndex: number } | null>(null);
 
   const rawByRoom = controller.templatesByRoomForActiveTrack();
+  const makeNewProducerTaskDraft = (mode: NewProducerTaskDraft['mode']): NewProducerTaskDraft => {
+    const today = new Date();
+    return {
+      mode,
+      title: '',
+      room: 'Veg Room',
+      category: 'Mother',
+      priority: 3,
+      hours: 1,
+      sendDataToSpecificEmployee: false,
+      dataRecipientRole: 'producer',
+      allowVoiceDictation: true,
+      recurringStartDateIso: today.toISOString().slice(0, 10),
+      recurringTime: '08:00',
+      recurringWeekday: (today.getDay() + 6) % 7,
+      recurringFrequency: 'weekly',
+    };
+  };
   const editingTask = editingTaskId
     ? controller.scheduledTaskById(editingTaskId)
     : undefined;
@@ -2674,62 +2529,32 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     ? controller.templateForScheduledTaskId(editingTaskId)
     : undefined;
   const notNeeded = controller.notNeededThisWeekByTrack[controller.activeTrack];
-  const showAllInPlanner = controller.selectedRole === 'producer' ? true : showAll;
+  const showAllInPlanner = controller.selectedRole === 'producer' ? false : showAll;
 
   const isScheduled = (templateId: string) =>
     Boolean(controller.findThisWeekRequest(templateId) || controller.findExplicitNextWeekTask(templateId));
 
-  const revolvingTemplateIds = new Set<string>(
-    controller.selectedRole === 'producer'
-      ? Object.values(rawByRoom)
-          .flat()
-          .filter((template) => template.taskRecurrenceMode !== 'none')
-          .map((template) => template.id)
-      : [],
-  );
-
   const byRoom: Record<string, AssessmentTemplate[]> = {};
   for (const [room, templates] of Object.entries(rawByRoom)) {
     const filtered = templates.filter((template) => {
-      if (controller.selectedRole === 'producer' && revolvingTemplateIds.has(template.id)) {
-        return false;
-      }
       if (showAllInPlanner) return true;
       return !isScheduled(template.id) && !notNeeded.has(template.id);
     });
     if (filtered.length > 0 || showAllInPlanner) byRoom[room] = filtered;
   }
-  if (controller.selectedRole === 'producer' && revolvingTemplateIds.size > 0) {
-    const revolvingTemplates = Object.values(rawByRoom)
-      .flat()
-      .filter((template) => revolvingTemplateIds.has(template.id));
-    if (revolvingTemplates.length > 0) {
-      byRoom['Revolving Tasks'] = revolvingTemplates;
-    }
-  }
 
   const producerQuestionnaireEntries =
     controller.selectedRole === 'producer'
       ? Object.entries(rawByRoom).flatMap(([room, templates]) =>
-          templates.map((template) => ({
-            room,
-            category: categoryDisplayName(template.category),
-            template,
-          })),
+          templates
+            .filter((template) => !producerRecurringTasks.some((task) => task.templateId === template.id))
+            .map((template) => ({
+              room,
+              category: categoryDisplayName(template.category),
+              template,
+            })),
         )
       : [];
-  const producerQuestionnaireTotal =
-    controller.selectedRole === 'producer'
-      ? producerQuestionnaireEntries.length
-      : 0;
-  const producerQuestionIndexByTemplateId =
-    controller.selectedRole === 'producer'
-      ? producerQuestionnaireEntries.reduce<Record<string, number>>((acc, entry, index) => {
-          acc[entry.template.id] = index + 1;
-          return acc;
-        }, {})
-      : {};
-
   const getDraft = (template: AssessmentTemplate): DraftPlan => {
     const existing = draftByTemplateId[template.id];
     if (existing) return existing;
@@ -2759,41 +2584,13 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     };
   };
 
-  const getTransferQuestionDraft = (
-    template: AssessmentTemplate,
-    baseDraft: DraftPlan,
-  ): TransferQuestionDraft => {
-    const existing = transferQuestionByTemplateId[template.id];
-    if (existing) return existing;
-    return {
-      rows: [{ rowNumber: baseDraft.flowerRowNumber ?? null, strainName: '' }],
-      finalized: false,
-    };
-  };
-
-  const updateTransferQuestionDraft = (
-    templateId: string,
-    updater: (current: TransferQuestionDraft) => TransferQuestionDraft,
-  ) => {
-    setTransferQuestionByTemplateId((prev) => {
-      const current =
-        prev[templateId]
-        ?? {
-          rows: [{ rowNumber: null, strainName: '' }],
-          finalized: false,
-        };
-      return {
-        ...prev,
-        [templateId]: updater(current),
-      };
-    });
-  };
+  const producerVisibleQuestions = producerQuestionnaireEntries;
 
   const openEditTask = (taskId: string) => {
     const task = controller.scheduledTaskById(taskId);
     if (!task) return;
-    if (task.completed && !roleCanAdmin(controller.selectedRole)) {
-      alert('Completed tasks are locked. Only Admin can edit them.');
+    if (task.completed && !controller.canModifyBackend) {
+      alert('Completed tasks are locked. Select Admin to edit them.');
       return;
     }
     setEditingTaskId(taskId);
@@ -2858,8 +2655,8 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     }
     const lockedThisWeek = controller.findThisWeekRequest(template.id)?.completed ?? false;
     const lockedNextWeek = controller.findExplicitNextWeekTask(template.id)?.completed ?? false;
-    if (!roleCanAdmin(controller.selectedRole) && (lockedThisWeek || lockedNextWeek)) {
-      alert('Completed tasks are locked. Only Admin can modify them.');
+    if (!controller.canModifyBackend && (lockedThisWeek || lockedNextWeek)) {
+      alert('Completed tasks are locked. Select Admin to modify them.');
       return false;
     }
     controller.setTemplateNotNeededThisWeek(template.id, false);
@@ -2917,65 +2714,13 @@ function WeeklyPage({ controller }: { controller: AppController }) {
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
 
-  const beginScheduleTaskDrag = (event: DragEvent<HTMLElement>, task: WeekTask) => {
-    if (task.completed && !roleCanAdmin(controller.selectedRole)) return;
-    setDraggingScheduledTask({ taskId: task.id });
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', task.id);
-  };
-
-  const allowScheduleTaskDrop = (
-    event: DragEvent<HTMLElement>,
-    scheduleWindow: 'thisWeek' | 'nextWeek',
-    dayIndex: number,
-  ) => {
-    if (!draggingScheduledTask) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    if (dragTarget?.scheduleWindow !== scheduleWindow || dragTarget.dayIndex !== dayIndex) {
-      setDragTarget({ scheduleWindow, dayIndex });
-    }
-  };
-
-  const clearScheduleDragState = () => {
-    setDraggingScheduledTask(null);
-    setDragTarget(null);
-  };
-
-  const dropScheduleTask = (
-    event: DragEvent<HTMLElement>,
-    scheduleWindow: 'thisWeek' | 'nextWeek',
-    dayIndex: number,
-  ) => {
-    if (!draggingScheduledTask) return;
-    event.preventDefault();
-    const task = controller.scheduledTaskById(draggingScheduledTask.taskId);
-    if (!task) {
-      clearScheduleDragState();
-      return;
-    }
-    if (task.completed && !roleCanAdmin(controller.selectedRole)) {
-      clearScheduleDragState();
-      return;
-    }
-    controller.updateScheduledTask(task.id, {
-      title: task.title,
-      room: task.room,
-      preferredDay: dayIndex,
-      estimatedHours: task.estimatedHours,
-      scheduleWindow,
-    });
-    clearScheduleDragState();
-  };
-
   const checklistRoles = controller.dailyChecklistRoles();
   const isBudtenderChecklistRole = checklistRoles.includes(controller.selectedRole);
   const canViewChecklistSummary =
-    (controller.selectedRole === 'generalManager'
+    controller.selectedRole === 'generalManager'
     || controller.selectedRole === 'budtenderJoSenior'
     || controller.selectedRole === 'ceoExecutive'
-    || controller.selectedRole === 'ceo')
-    && controller.activeTrack !== 'producer';
+    || controller.selectedRole === 'ceo';
   const canUseDailyChecklist = isBudtenderChecklistRole || canViewChecklistSummary;
 
   useEffect(() => {
@@ -3026,7 +2771,7 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                     </label>
                   ))}
                   {controller.dailyChecklistTemplatesForRole(controller.selectedRole).length === 0 ? (
-                    <p className="muted">No daily checklist templates yet for this role. Add tasks in Admin Editable Tasks.</p>
+                    <p className="muted">No daily checklist templates yet for this role. Add tasks in CEO Modification Tasks.</p>
                   ) : null}
                 </>
               ) : null}
@@ -3070,59 +2815,39 @@ function WeeklyPage({ controller }: { controller: AppController }) {
       ) : null}
       {controller.selectedRole !== 'producer' ? (
       <div className="card summary">
-        <h2>Task List for the Next Two Weeks</h2>
-        <p className="muted">Drag and drop any task into another day to rearrange the schedule.</p>
+        <h2>Task List</h2>
         <section className="week-block">
           <h3>This Week <small>{weekRangeLabel(currentWeekStart)}</small></h3>
           <div className="schedule-grid">
-            {UI.dayLabels.map((day, index) => {
-              const load = controller.dayLoad(index);
-              const capClass = load >= 8 ? 'day-over-full' : load >= 7 ? 'day-near-full' : '';
-              const dropActive =
-                dragTarget?.scheduleWindow === 'thisWeek' && dragTarget.dayIndex === index;
-              return (
-              <div
-                key={`this-${day}`}
-                className={`day-col ${capClass} ${dropActive ? 'day-col-drop-target' : ''}`}
-                onDragOver={(event) => allowScheduleTaskDrop(event, 'thisWeek', index)}
-                onDragLeave={() => {
-                  if (dropActive) setDragTarget(null);
-                }}
-                onDrop={(event) => dropScheduleTask(event, 'thisWeek', index)}
-              >
+            {UI.dayLabels.map((day, index) => (
+              <div key={`this-${day}`} className="day-col">
                 <div className="day-head">
                   <h4>
                     {day}
                     <span className="day-date-small">{dayDateLabel(currentWeekStart, index)}</span>
                   </h4>
                   <span className="day-load-small">
-                    {load.toFixed(1)} / 8h
+                    {controller.dayLoad(index).toFixed(1)} / 8h
                   </span>
                 </div>
                 {controller.tasksForDay(index).map((task) => (
-                <label
-                  key={task.id}
-                  className="check-row"
-                  draggable={!(task.completed && !roleCanAdmin(controller.selectedRole))}
-                  onDragStart={(event) => beginScheduleTaskDrag(event, task)}
-                  onDragEnd={clearScheduleDragState}
-                >
+                <label key={task.id} className="check-row">
                   <input
                     type="checkbox"
                     checked={task.completed}
-                    disabled={task.completed && !roleCanAdmin(controller.selectedRole)}
+                    disabled={task.completed && !controller.canModifyBackend}
                     onChange={(e) => {
                       const ok = controller.toggleThisWeekCompletion(task.id, e.target.checked);
                       if (!ok && e.target.checked) {
                         alert('Send required task data/message before marking this task complete.');
                       }
                       if (!ok && !e.target.checked) {
-                        alert('Completed tasks are locked. Only Admin can modify them.');
+                        alert('Completed tasks are locked. Select Admin to modify them.');
                       }
                     }}
                   />
                   <span>
-                    {task.completed && !roleCanAdmin(controller.selectedRole) ? (
+                    {task.completed && !controller.canModifyBackend ? (
                       <>
                         {task.title} ({controller.formatHoursLabel(task.estimatedHours)})
                       </>
@@ -3138,28 +2863,14 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                   </label>
                 ))}
               </div>
-              );
-            })}
+            ))}
           </div>
         </section>
         <section className="week-block">
           <h3>Next Week <small>{weekRangeLabel(nextWeekStart)}</small></h3>
           <div className="schedule-grid">
-            {UI.dayLabels.map((day, index) => {
-              const load = nextWeekDayLoad(index);
-              const capClass = load >= 8 ? 'day-over-full' : load >= 7 ? 'day-near-full' : '';
-              const dropActive =
-                dragTarget?.scheduleWindow === 'nextWeek' && dragTarget.dayIndex === index;
-              return (
-              <div
-                key={`next-${day}`}
-                className={`day-col ${capClass} ${dropActive ? 'day-col-drop-target' : ''}`}
-                onDragOver={(event) => allowScheduleTaskDrop(event, 'nextWeek', index)}
-                onDragLeave={() => {
-                  if (dropActive) setDragTarget(null);
-                }}
-                onDrop={(event) => dropScheduleTask(event, 'nextWeek', index)}
-              >
+            {UI.dayLabels.map((day, index) => (
+              <div key={`next-${day}`} className="day-col">
                 <div className="day-head">
                   <h4>
                     {day}
@@ -3170,29 +2881,23 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                   </span>
                 </div>
                 {nextWeekTasksForDay(index).map((task) => (
-                  <label
-                    key={task.id}
-                    className="check-row"
-                    draggable={!(task.completed && !roleCanAdmin(controller.selectedRole))}
-                    onDragStart={(event) => beginScheduleTaskDrag(event, task)}
-                    onDragEnd={clearScheduleDragState}
-                  >
+                  <label key={task.id} className="check-row">
                     <input
                       type="checkbox"
                       checked={task.completed}
-                      disabled={task.completed && !roleCanAdmin(controller.selectedRole)}
+                      disabled={task.completed && !controller.canModifyBackend}
                       onChange={(e) => {
                         const ok = controller.toggleNextWeekCompletion(task.id, e.target.checked);
                         if (!ok && e.target.checked) {
                           alert('Send required task data/message before marking this task complete.');
                         }
                         if (!ok && !e.target.checked) {
-                          alert('Completed tasks are locked. Only Admin can modify them.');
+                          alert('Completed tasks are locked. Select Admin to modify them.');
                         }
                       }}
                     />
                     <span>
-                      {task.completed && !roleCanAdmin(controller.selectedRole) ? (
+                      {task.completed && !controller.canModifyBackend ? (
                         <>
                           {task.title} ({controller.formatHoursLabel(task.estimatedHours)})
                         </>
@@ -3208,8 +2913,7 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                   </label>
                 ))}
               </div>
-              );
-            })}
+            ))}
           </div>
         </section>
         {controller.overflowTasks.length > 0 ? (
@@ -3218,25 +2922,9 @@ function WeeklyPage({ controller }: { controller: AppController }) {
       </div>
       ) : null}
 
-      <div className="card">
+      <div className="card planner-card">
         <div className="header-row">
-          <h2>{plannerTab === 'room' ? 'Task by Room' : 'Create new random task'}</h2>
-          {controller.selectedRole === 'producer' ? (
-            <div className="button-row">
-              <button
-                className={plannerTab === 'room' ? 'active-toggle' : ''}
-                onClick={() => setPlannerTab('room')}
-              >
-                Tasks by Room
-              </button>
-              <button
-                className={plannerTab === 'random' ? 'active-toggle' : ''}
-                onClick={() => setPlannerTab('random')}
-              >
-                Create new random task
-              </button>
-            </div>
-          ) : null}
+          {controller.selectedRole !== 'producer' ? <h2>Task by Room</h2> : null}
           {controller.selectedRole !== 'producer' ? (
             <div className="button-row">
               <button onClick={() => setShowAll((v) => !v)}>
@@ -3248,418 +2936,213 @@ function WeeklyPage({ controller }: { controller: AppController }) {
             </div>
           ) : null}
         </div>
-        {plannerTab === 'random' ? (
-          <div className="form-grid">
-            <p className="muted">
-              Enter the task name and allotted time, then choose when to schedule it.
-            </p>
-            <label>
-              Task title
-              <input
-                value={customRandomTaskTitle}
-                onChange={(e) => setCustomRandomTaskTitle(e.target.value)}
-                placeholder="Write task title..."
-              />
-            </label>
-            <label>
-              Allotted time
-              <select
-                value={customRandomTaskHours}
-                onChange={(e) => setCustomRandomTaskHours(Number(e.target.value))}
-              >
-                {UI.hourStepOptions().map((value) => (
-                  <option key={value} value={value}>
-                    {controller.formatHoursLabel(value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="day-pill-row">
-              {UI.dayLabels.map((label, dayIndex) => (
-                <button
-                  key={`custom-random-day-${label}`}
-                  type="button"
-                  className={`day-pill ${customRandomTaskDay === dayIndex ? 'active-day' : ''}`}
-                  onClick={() => setCustomRandomTaskDay(dayIndex)}
-                >
-                  {label.slice(0, 3)}
-                </button>
-              ))}
-            </div>
-            <div className="button-row">
-              <button
-                onClick={() => {
-                  const ok = controller.addRandomTaskToPlan({
-                    title: customRandomTaskTitle,
-                    hours: customRandomTaskHours,
-                    preferredDay: customRandomTaskDay,
-                    forNextWeek: false,
-                  });
-                  if (!ok) {
-                    alert('Enter a task title first.');
-                    return;
-                  }
-                  setCustomRandomTaskTitle('');
-                }}
-              >
-                Schedule This Week
-              </button>
-              <button
-                onClick={() => {
-                  const ok = controller.addRandomTaskToPlan({
-                    title: customRandomTaskTitle,
-                    hours: customRandomTaskHours,
-                    preferredDay: customRandomTaskDay,
-                    forNextWeek: true,
-                  });
-                  if (!ok) {
-                    alert('Enter a task title first.');
-                    return;
-                  }
-                  setCustomRandomTaskTitle('');
-                }}
-              >
-                Schedule Next Week
-              </button>
-            </div>
+        {controller.selectedRole === 'producer' && controller.canModifyBackend ? (
+          <div className="producer-backend-create-bar">
+            <button type="button" onClick={() => setNewProducerTaskDraft(makeNewProducerTaskDraft('task'))}>
+              Create New Task
+            </button>
+            <button type="button" onClick={() => setNewProducerTaskDraft(makeNewProducerTaskDraft('recurring'))}>
+              Create New Recurring Task
+            </button>
           </div>
         ) : null}
-        {plannerTab === 'room' ? (
+        {controller.selectedRole === 'producer' && producerVisibleQuestions.length > 0 ? (
+          <div className="producer-five-task-list">
+            {producerVisibleQuestions.map((entry, index) => {
+              const absoluteIndex = index;
+              const draft = getDraft(entry.template);
+              const requiresRowSelection = controller.templateRequiresFlowerRowSelection(entry.template);
+              const thisWeek = controller.findThisWeekRequest(entry.template.id);
+              const nextWeek = controller.findExplicitNextWeekTask(entry.template.id);
+              const scheduled = Boolean(thisWeek || nextWeek);
+              const recurringTask = producerRecurringTasks.find((task) => task.templateId === entry.template.id);
+              return (
+                <article
+                  key={`producer-visible-${entry.template.id}`}
+                  className={`producer-question-row ${absoluteIndex === producerQuestionIndex ? 'active' : ''}`}
+                >
+                  <div
+                    className={`producer-question-label ${controller.canModifyBackend ? 'backend-open' : ''}`}
+                    onClick={() => setProducerQuestionIndex(absoluteIndex)}
+                  >
+                    <strong>{absoluteIndex + 1}.</strong>
+                    {controller.canModifyBackend ? (
+                      <span className="producer-question-title-actions">
+                        <button
+                          type="button"
+                          className="edit-mini-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setEditingProducerTemplate({
+                              ...entry.template,
+                              autoScheduledTasks: sortAutoTaskDrafts(entry.template.autoScheduledTasks),
+                            });
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="delete-mini-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            const confirmed = window.confirm(`Permanently delete task: "${entry.template.title}"?`);
+                            if (!confirmed) return;
+                            controller.deleteTemplate(entry.template.id);
+                            onRemoveProducerRecurringTask?.(entry.template.id);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </span>
+                    ) : null}
+                    <span>{entry.category}</span>
+                    <span>{entry.template.title}</span>
+                  </div>
+                  <div className="producer-question-days">
+                    {UI.dayLabels.map((label, idx) => (
+                      <button
+                        key={`${entry.template.id}-${label}`}
+                        type="button"
+                        className={`day-pill ${draft.day === idx ? 'active-day' : ''}`}
+                        onClick={() =>
+                          setDraftByTemplateId((prev) => ({
+                            ...prev,
+                            [entry.template.id]: {
+                              ...draft,
+                              day: idx,
+                            },
+                          }))
+                        }
+                      >
+                        {label.slice(0, 3)}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="producer-question-hours">
+                    Hours
+                    <select
+                      value={draft.hours}
+                      onChange={(e) =>
+                        setDraftByTemplateId((prev) => ({
+                          ...prev,
+                          [entry.template.id]: {
+                            ...draft,
+                            hours: Number(e.target.value),
+                          },
+                        }))
+                      }
+                    >
+                      {UI.hourStepOptions().map((value) => (
+                        <option key={value} value={value}>
+                          {controller.formatHoursLabel(value)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {requiresRowSelection ? (
+                    <label className="producer-question-row-select">
+                      Row
+                      <select
+                        value={draft.flowerRowNumber ?? ''}
+                        onChange={(e) =>
+                          setDraftByTemplateId((prev) => ({
+                            ...prev,
+                            [entry.template.id]: {
+                              ...draft,
+                              flowerRowNumber: e.target.value ? Number(e.target.value) : null,
+                            },
+                          }))
+                        }
+                      >
+                        <option value="">Select</option>
+                        {Array.from({ length: 9 }, (_, idx) => 9 - idx).map((rowNumber) => (
+                          <option key={`producer-row-${entry.template.id}-${rowNumber}`} value={rowNumber}>
+                            Row {rowNumber}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <div className="producer-question-actions">
+                    <button
+                      type="button"
+                      className={!nextWeek && scheduled ? 'active-toggle' : ''}
+                      onClick={() => {
+                        if (requiresRowSelection && !draft.flowerRowNumber) {
+                          alert('Select flower room row (1-9) before scheduling this task.');
+                          return;
+                        }
+                        scheduleFromDraft(entry.template, draft, false);
+                      }}
+                    >
+                      Schedule This Week
+                    </button>
+                    <button
+                      type="button"
+                      className={controller.isTemplateNotNeededThisWeek(entry.template.id) ? 'active-toggle' : ''}
+                      onClick={() =>
+                        controller.setTemplateNotNeededThisWeek(
+                          entry.template.id,
+                          !controller.isTemplateNotNeededThisWeek(entry.template.id),
+                        )
+                      }
+                    >
+                      Not Needed This Week
+                    </button>
+                    <button
+                      type="button"
+                      className={nextWeek ? 'active-toggle' : ''}
+                      onClick={() => {
+                        if (requiresRowSelection && !draft.flowerRowNumber) {
+                          alert('Select flower room row (1-9) before scheduling this task.');
+                          return;
+                        }
+                        scheduleFromDraft(entry.template, draft, true);
+                      }}
+                    >
+                      Schedule Task Next Week
+                    </button>
+                  </div>
+                  <div className="producer-recurring-controls">
+                    <button
+                      type="button"
+                      className={recurringTask ? 'active-toggle' : ''}
+                      onClick={() => {
+                        setRecurringEditor(recurringTask ?? {
+                          templateId: entry.template.id,
+                          title: entry.template.title,
+                          room: entry.room,
+                          category: entry.category,
+                          hours: draft.hours,
+                          weekday: draft.day,
+                          frequency: 'weekly',
+                          startDateIso: new Date().toISOString().slice(0, 10),
+                          time: '08:00',
+                          priority: entry.template.priority,
+                        });
+                      }}
+                    >
+                      Recurring
+                    </button>
+                    {recurringTask ? <span>P{recurringTask.priority} {recurringFrequencyLabels[recurringTask.frequency]}</span> : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
           <>
             {!roleCanPlan(controller.selectedRole) ? (
               <p className="muted">Read-only role: only planning roles can assign assessments.</p>
             ) : null}
 
             {controller.selectedRole === 'producer' ? (
-              Object.entries(byRoom).map(([room, templates]) => (
-                <section key={room} className="room-block questionnaire-block">
-                  <div className="room-head">
-                    <h3>
-                      {room} <small>{templates.length} questions</small>
-                    </h3>
-                  </div>
-                  {templates.length === 0 ? <p className="muted">No tasks in current filter.</p> : null}
-                  {Object.entries(
-                    templates.reduce<Record<string, AssessmentTemplate[]>>((acc, template) => {
-                      const key = categoryDisplayName(template.category);
-                      if (!acc[key]) acc[key] = [];
-                      acc[key].push(template);
-                      return acc;
-                    }, {}),
-                  ).map(([category, categoryTemplates]) => (
-                    <div key={`${room}-${category}`} className="category-block">
-                      <div className="category-head">
-                        <h4>{category}</h4>
-                        <span>{categoryTemplates.length} tasks</span>
-                      </div>
-                      <div className="task-list-grid producer-four-col">
-                        {categoryTemplates.map((template) => {
-                          const draft = getDraft(template);
-                          const thisWeek = controller.findThisWeekRequest(template.id);
-                          const nextWeek = controller.findExplicitNextWeekTask(template.id);
-                          const requiresRowSelection = controller.templateRequiresFlowerRowSelection(template);
-                          const isTransferTask = isTransferTaskTitle(template.title);
-                          const transferDraft =
-                            requiresRowSelection && isTransferTask
-                              ? getTransferQuestionDraft(template, draft)
-                              : null;
-                          const selectedTransferRows =
-                            transferDraft?.rows
-                              .filter((row) => typeof row.rowNumber === 'number')
-                              .map((row) => ({
-                                rowNumber: row.rowNumber as number,
-                                strainName: row.strainName.trim(),
-                              }))
-                              ?? [];
-                          const canSchedule =
-                            !requiresRowSelection
-                            || (isTransferTask
-                              ? Boolean(transferDraft?.finalized && selectedTransferRows.length > 0)
-                              : Boolean(draft.flowerRowNumber));
-                          const questionIndex = producerQuestionIndexByTemplateId[template.id] ?? 0;
-                          const rowPrompt = isTransferTask
-                            ? 'Which row will you be transplanting veg plants into?'
-                            : normalized(template.title).includes('harvest')
-                              ? 'Which flower room row are you harvesting?'
-                              : 'Which flower room row are you rototilling and adding amendments to?';
-
-                          return (
-                            <article key={template.id} className="task-card compact questionnaire-card">
-                              <div className="task-main">
-                                <h4>{template.title}</h4>
-                                <p className="muted">
-                                  Question {questionIndex} of {producerQuestionnaireTotal}
-                                </p>
-                                <p>
-                                  Estimated time to complete task:{' '}
-                                  {controller.formatHoursLabel(template.defaultHours)}
-                                </p>
-                                <div className="task-controls inline-under-title">
-                                  <div className="day-pill-row">
-                                    {UI.dayLabels.map((label, idx) => (
-                                      <button
-                                        key={label}
-                                        className={`day-pill ${draft.day === idx ? 'active-day' : ''}`}
-                                        onClick={() =>
-                                          setDraftByTemplateId((prev) => ({
-                                            ...prev,
-                                            [template.id]: {
-                                              ...draft,
-                                              day: idx,
-                                            },
-                                          }))
-                                        }
-                                      >
-                                        {label.slice(0, 3)}
-                                      </button>
-                                    ))}
-                                  </div>
-
-                                  <label className="hours-field">
-                                    Hours
-                                    <select
-                                      value={draft.hours}
-                                      onChange={(e) =>
-                                        setDraftByTemplateId((prev) => ({
-                                          ...prev,
-                                          [template.id]: {
-                                            ...draft,
-                                            hours: Number(e.target.value),
-                                          },
-                                        }))
-                                      }
-                                    >
-                                      {UI.hourStepOptions().map((value) => (
-                                        <option key={value} value={value}>
-                                          {controller.formatHoursLabel(value)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </label>
-
-                                  {requiresRowSelection && transferDraft ? (
-                                    <div className="row-select-field">
-                                      <p className="muted">{rowPrompt}</p>
-                                      {transferDraft.rows.map((rowDraft, rowIndex) => (
-                                        <div key={`transfer-row-${template.id}-${rowIndex}`} className="task-action-row edit-window">
-                                          <label className="hours-field">
-                                            {rowIndex + 1 === 1 ? 'Row' : `Additional row ${rowIndex + 1}`}
-                                            <select
-                                              value={rowDraft.rowNumber ?? ''}
-                                              onChange={(e) =>
-                                                updateTransferQuestionDraft(template.id, (current) => ({
-                                                  ...current,
-                                                  rows: current.rows.map((item, idx) =>
-                                                    idx === rowIndex
-                                                      ? { ...item, rowNumber: e.target.value ? Number(e.target.value) : null }
-                                                      : item,
-                                                  ),
-                                                }))
-                                              }
-                                            >
-                                              <option value="">Select row</option>
-                                              {Array.from({ length: 9 }, (_, idx) => 9 - idx).map((rowNumber) => (
-                                                <option key={`row-${rowNumber}`} value={rowNumber}>
-                                                  Row {rowNumber}
-                                                </option>
-                                              ))}
-                                            </select>
-                                          </label>
-                                          <label className="hours-field">
-                                            Enter strain name
-                                            <input
-                                              placeholder="Type strain name"
-                                              value={rowDraft.strainName}
-                                              onChange={(e) =>
-                                                updateTransferQuestionDraft(template.id, (current) => ({
-                                                  ...current,
-                                                  rows: current.rows.map((item, idx) =>
-                                                    idx === rowIndex ? { ...item, strainName: e.target.value } : item,
-                                                  ),
-                                                }))
-                                              }
-                                            />
-                                          </label>
-                                        </div>
-                                      ))}
-                                      <div className="button-row">
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            updateTransferQuestionDraft(template.id, (current) => ({
-                                              ...current,
-                                              finalized: false,
-                                              rows:
-                                                current.rows.length >= 9
-                                                  ? current.rows
-                                                  : [...current.rows, { rowNumber: null, strainName: '' }],
-                                            }))
-                                          }
-                                          disabled={transferDraft.rows.length >= 9}
-                                        >
-                                          Transplant another row
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            updateTransferQuestionDraft(template.id, (current) => ({
-                                              ...current,
-                                              finalized: true,
-                                            }))
-                                          }
-                                        >
-                                          No more rows need to be transplanted
-                                        </button>
-                                      </div>
-                                      {transferDraft.finalized ? (
-                                        <p className="muted">Rows finalized. Choose a scheduling option below.</p>
-                                      ) : (
-                                        <p className="muted">Finalize rows before scheduling this task.</p>
-                                      )}
-                                    </div>
-                                  ) : null}
-
-                                  {requiresRowSelection && !transferDraft ? (
-                                    <label className="hours-field row-select-field">
-                                      {rowPrompt}
-                                      <select
-                                        value={draft.flowerRowNumber ?? ''}
-                                        onChange={(e) =>
-                                          setDraftByTemplateId((prev) => ({
-                                            ...prev,
-                                            [template.id]: {
-                                              ...draft,
-                                              flowerRowNumber: e.target.value ? Number(e.target.value) : null,
-                                            },
-                                          }))
-                                        }
-                                      >
-                                        <option value="">Select row</option>
-                                        {Array.from({ length: 9 }, (_, idx) => 9 - idx).map((rowNumber) => (
-                                          <option key={`row-${rowNumber}`} value={rowNumber}>
-                                            Row {rowNumber}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </label>
-                                  ) : null}
-
-                                  <div className="task-action-row">
-                                    <button
-                                      onClick={() => {
-                                        let ok = false;
-                                        if (isTransferTask && transferDraft) {
-                                          if (!canSchedule) {
-                                            alert('Finalize transplant rows and select at least one row before scheduling.');
-                                            return;
-                                          }
-                                          const [primaryRow, ...additionalRows] = selectedTransferRows;
-                                          if (!primaryRow) {
-                                            alert('Select at least one row before scheduling.');
-                                            return;
-                                          }
-                                          const draftForPrimary = {
-                                            ...draft,
-                                            flowerRowNumber: primaryRow.rowNumber,
-                                          };
-                                          setDraftByTemplateId((prev) => ({
-                                            ...prev,
-                                            [template.id]: draftForPrimary,
-                                          }));
-                                          controller.removePlan(template.id, false);
-                                          controller.removePlan(template.id, true);
-                                          ok = scheduleFromDraft(template, draftForPrimary, false);
-                                          if (ok && additionalRows.length > 0) {
-                                            controller.planAdditionalTransferRows({
-                                              template,
-                                              hours: draftForPrimary.hours,
-                                              preferredDay: draftForPrimary.day,
-                                              forNextWeek: false,
-                                              rows: additionalRows,
-                                            });
-                                          }
-                                        } else {
-                                          ok = scheduleFromDraft(template, draft, false);
-                                        }
-                                        if (!ok) return;
-                                      }}
-                                      disabled={!canSchedule}
-                                    >
-                                      Schedule this week
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        controller.setTemplateNotNeededThisWeek(
-                                          template.id,
-                                          true,
-                                        );
-                                      }}
-                                    >
-                                      Not needed this week
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        let ok = false;
-                                        if (isTransferTask && transferDraft) {
-                                          if (!canSchedule) {
-                                            alert('Finalize transplant rows and select at least one row before scheduling.');
-                                            return;
-                                          }
-                                          const [primaryRow, ...additionalRows] = selectedTransferRows;
-                                          if (!primaryRow) {
-                                            alert('Select at least one row before scheduling.');
-                                            return;
-                                          }
-                                          const draftForPrimary = {
-                                            ...draft,
-                                            flowerRowNumber: primaryRow.rowNumber,
-                                          };
-                                          setDraftByTemplateId((prev) => ({
-                                            ...prev,
-                                            [template.id]: draftForPrimary,
-                                          }));
-                                          controller.removePlan(template.id, false);
-                                          controller.removePlan(template.id, true);
-                                          ok = scheduleFromDraft(template, draftForPrimary, true);
-                                          if (ok && additionalRows.length > 0) {
-                                            controller.planAdditionalTransferRows({
-                                              template,
-                                              hours: draftForPrimary.hours,
-                                              preferredDay: draftForPrimary.day,
-                                              forNextWeek: true,
-                                              rows: additionalRows,
-                                            });
-                                          }
-                                        } else {
-                                          ok = scheduleFromDraft(template, draft, true);
-                                        }
-                                        if (!ok) return;
-                                      }}
-                                      disabled={!canSchedule}
-                                    >
-                                      Schedule task next week
-                                    </button>
-                                  </div>
-                                </div>
-                                {template.autoScheduledTasks.length > 0 ? (
-                                  <p className="scheduled-tag">
-                                    Auto-schedules {template.autoScheduledTasks.length} related tasks
-                                  </p>
-                                ) : null}
-                                {thisWeek || nextWeek ? (
-                                  <p className="scheduled-tag">
-                                    Scheduled for {thisWeek ? 'this week' : 'next week'}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </section>
-              ))
+              producerVisibleQuestions.length === 0 ? (
+                <p className="muted">
+                  All tasks are reviewed. Open the &ldquo;Task List&rdquo; tab to view the full plan.
+                </p>
+              ) : null
             ) : (
               Object.entries(byRoom).map(([room, templates]) => (
                 <section key={room} className="room-block">
@@ -3700,14 +3183,9 @@ function WeeklyPage({ controller }: { controller: AppController }) {
                               const thisWeek = controller.findThisWeekRequest(template.id);
                               const nextWeek = controller.findExplicitNextWeekTask(template.id);
                               const requiresRowSelection = controller.templateRequiresFlowerRowSelection(template);
-                              const rowPrompt = isTransferTaskTitle(template.title)
-                                ? 'Which row will you be transplanting veg plants into?'
-                                : normalized(template.title).includes('harvest')
-                                  ? 'Which flower room row are you harvesting?'
-                                  : 'Which flower room row are you rototilling and adding amendments to?';
                               const scheduled = Boolean(thisWeek || nextWeek);
                               const lockedScheduled =
-                                !roleCanAdmin(controller.selectedRole)
+                                !controller.canModifyBackend
                                 && Boolean(thisWeek?.completed || nextWeek?.completed);
 
                               return (
@@ -3764,7 +3242,7 @@ function WeeklyPage({ controller }: { controller: AppController }) {
 
                                       {requiresRowSelection ? (
                                         <label className="hours-field row-select-field">
-                                          {rowPrompt}
+                                          Which row will you be transplanting veg plants into?
                                           <select
                                             value={draft.flowerRowNumber ?? ''}
                                             onChange={(e) =>
@@ -3855,8 +3333,460 @@ function WeeklyPage({ controller }: { controller: AppController }) {
               ))
             )}
           </>
-        ) : null}
       </div>
+      {newProducerTaskDraft ? (
+        <Modal
+          title={newProducerTaskDraft.mode === 'recurring' ? 'Create Recurring Producer Task' : 'Create Producer Task'}
+          onClose={() => setNewProducerTaskDraft(null)}
+        >
+          <form
+            className="form-grid recurring-editor-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!newProducerTaskDraft.title.trim() || !newProducerTaskDraft.room.trim() || !newProducerTaskDraft.category.trim()) {
+                alert('Enter a title, room, and category before creating the task.');
+                return;
+              }
+              const created = controller.createTemplate({
+                track: 'producer',
+                title: newProducerTaskDraft.title,
+                room: newProducerTaskDraft.room,
+                category: newProducerTaskDraft.category,
+                priority: newProducerTaskDraft.priority,
+                defaultHours: newProducerTaskDraft.hours,
+                sendDataToSpecificEmployee: newProducerTaskDraft.sendDataToSpecificEmployee,
+                dataRecipientRole: newProducerTaskDraft.dataRecipientRole,
+                allowVoiceDictation: newProducerTaskDraft.allowVoiceDictation,
+              });
+              if (created && newProducerTaskDraft.mode === 'recurring') {
+                onUpsertProducerRecurringTask?.({
+                  templateId: created.id,
+                  title: created.title,
+                  room: created.room,
+                  category: categoryDisplayName(created.category),
+                  hours: created.defaultHours,
+                  weekday: newProducerTaskDraft.recurringWeekday,
+                  frequency: newProducerTaskDraft.recurringFrequency,
+                  startDateIso: newProducerTaskDraft.recurringStartDateIso,
+                  time: newProducerTaskDraft.recurringTime,
+                  priority: created.priority,
+                });
+              }
+              setNewProducerTaskDraft(null);
+            }}
+          >
+            <label className="full-span">
+              Task title
+              <input
+                value={newProducerTaskDraft.title}
+                onChange={(e) => setNewProducerTaskDraft({ ...newProducerTaskDraft, title: e.target.value })}
+              />
+            </label>
+            <label>
+              Category
+              <input
+                value={newProducerTaskDraft.category}
+                onChange={(e) => setNewProducerTaskDraft({ ...newProducerTaskDraft, category: e.target.value })}
+              />
+            </label>
+            <label>
+              Room
+              <input
+                value={newProducerTaskDraft.room}
+                onChange={(e) => setNewProducerTaskDraft({ ...newProducerTaskDraft, room: e.target.value })}
+              />
+            </label>
+            <label>
+              Priority
+              <select
+                value={newProducerTaskDraft.priority}
+                onChange={(e) => setNewProducerTaskDraft({ ...newProducerTaskDraft, priority: Number(e.target.value) })}
+              >
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={`new-producer-priority-${value}`} value={value}>
+                    Priority {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Hours
+              <select
+                value={newProducerTaskDraft.hours}
+                onChange={(e) => setNewProducerTaskDraft({ ...newProducerTaskDraft, hours: Number(e.target.value) })}
+              >
+                {UI.hourStepOptions().map((value) => (
+                  <option key={`new-producer-hours-${value}`} value={value}>
+                    {controller.formatHoursLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Data recipient
+              <select
+                value={newProducerTaskDraft.dataRecipientRole}
+                onChange={(e) =>
+                  setNewProducerTaskDraft({ ...newProducerTaskDraft, dataRecipientRole: e.target.value as UserRole })
+                }
+              >
+                {userRoles.map((role) => (
+                  <option key={`new-producer-recipient-${role}`} value={role}>
+                    {userRoleLabel[role]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check-row producer-edit-check">
+              <input
+                type="checkbox"
+                checked={newProducerTaskDraft.sendDataToSpecificEmployee}
+                onChange={(e) =>
+                  setNewProducerTaskDraft({
+                    ...newProducerTaskDraft,
+                    sendDataToSpecificEmployee: e.target.checked,
+                  })
+                }
+              />
+              <span>Send data/message to recipient</span>
+            </label>
+            <label className="check-row producer-edit-check">
+              <input
+                type="checkbox"
+                checked={newProducerTaskDraft.allowVoiceDictation}
+                onChange={(e) =>
+                  setNewProducerTaskDraft({
+                    ...newProducerTaskDraft,
+                    allowVoiceDictation: e.target.checked,
+                  })
+                }
+              />
+              <span>Allow voice dictation</span>
+            </label>
+            {newProducerTaskDraft.mode === 'recurring' ? (
+              <>
+                <label>
+                  Start date
+                  <input
+                    type="date"
+                    value={newProducerTaskDraft.recurringStartDateIso}
+                    onChange={(e) => {
+                      const nextDate = new Date(`${e.target.value}T00:00:00`);
+                      setNewProducerTaskDraft({
+                        ...newProducerTaskDraft,
+                        recurringStartDateIso: e.target.value,
+                        recurringWeekday: Number.isNaN(nextDate.getTime())
+                          ? newProducerTaskDraft.recurringWeekday
+                          : (nextDate.getDay() + 6) % 7,
+                      });
+                    }}
+                  />
+                </label>
+                <label>
+                  Time
+                  <input
+                    type="time"
+                    value={newProducerTaskDraft.recurringTime}
+                    onChange={(e) => setNewProducerTaskDraft({ ...newProducerTaskDraft, recurringTime: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Repeat
+                  <select
+                    value={newProducerTaskDraft.recurringFrequency}
+                    onChange={(e) =>
+                      setNewProducerTaskDraft({
+                        ...newProducerTaskDraft,
+                        recurringFrequency: e.target.value as RecurringFrequency,
+                      })
+                    }
+                  >
+                    {recurringFrequencyOptions.map(([value, label]) => (
+                      <option key={`new-recurring-frequency-${value}`} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Repeat on
+                  <select
+                    value={newProducerTaskDraft.recurringWeekday}
+                    onChange={(e) => setNewProducerTaskDraft({ ...newProducerTaskDraft, recurringWeekday: Number(e.target.value) })}
+                  >
+                    {UI.dayLabels.map((label, weekday) => (
+                      <option key={`new-recurring-weekday-${label}`} value={weekday}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
+            <div className="button-row full-span">
+              <button type="submit">
+                {newProducerTaskDraft.mode === 'recurring' ? 'Create Recurring Task' : 'Create Task'}
+              </button>
+              <button type="button" onClick={() => setNewProducerTaskDraft(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+      {editingProducerTemplate ? (
+        <Modal title="Edit Producer Task" onClose={() => setEditingProducerTemplate(null)}>
+          <form
+            className="form-grid recurring-editor-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              controller.updateTemplate(editingProducerTemplate);
+              const existingRecurringTask = producerRecurringTasks.find(
+                (task) => task.templateId === editingProducerTemplate.id,
+              );
+              if (existingRecurringTask) {
+                onUpsertProducerRecurringTask?.({
+                  ...existingRecurringTask,
+                  title: editingProducerTemplate.title,
+                  room: editingProducerTemplate.room,
+                  category: categoryDisplayName(editingProducerTemplate.category),
+                  hours: editingProducerTemplate.defaultHours,
+                  priority: editingProducerTemplate.priority,
+                });
+              }
+              setEditingProducerTemplate(null);
+            }}
+          >
+            <label className="full-span">
+              Task title
+              <input
+                value={editingProducerTemplate.title}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    title: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Category
+              <input
+                value={editingProducerTemplate.category}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    category: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Room
+              <input
+                value={editingProducerTemplate.room}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    room: e.target.value,
+                  })
+                }
+              />
+            </label>
+            <label>
+              Priority
+              <select
+                value={editingProducerTemplate.priority}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    priority: Number(e.target.value),
+                  })
+                }
+              >
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <option key={`producer-edit-priority-${value}`} value={value}>
+                    Priority {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Default hours
+              <select
+                value={editingProducerTemplate.defaultHours}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    defaultHours: Number(e.target.value),
+                  })
+                }
+              >
+                {UI.hourStepOptions().map((value) => (
+                  <option key={`producer-edit-hours-${value}`} value={value}>
+                    {controller.formatHoursLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Data recipient
+              <select
+                value={editingProducerTemplate.dataRecipientRole}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    dataRecipientRole: e.target.value as UserRole,
+                  })
+                }
+              >
+                {userRoles.map((role) => (
+                  <option key={`producer-edit-recipient-${role}`} value={role}>
+                    {userRoleLabel[role]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="check-row producer-edit-check">
+              <input
+                type="checkbox"
+                checked={editingProducerTemplate.sendDataToSpecificEmployee}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    sendDataToSpecificEmployee: e.target.checked,
+                  })
+                }
+              />
+              <span>Send data/message to recipient</span>
+            </label>
+            <label className="check-row producer-edit-check">
+              <input
+                type="checkbox"
+                checked={editingProducerTemplate.allowVoiceDictation}
+                onChange={(e) =>
+                  setEditingProducerTemplate({
+                    ...editingProducerTemplate,
+                    allowVoiceDictation: e.target.checked,
+                  })
+                }
+              />
+              <span>Allow voice dictation</span>
+            </label>
+            <div className="button-row full-span">
+              <button type="submit">Save Task</button>
+              <button type="button" onClick={() => setEditingProducerTemplate(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+      {recurringEditor ? (
+        <Modal title="Recurring Task Settings" onClose={() => setRecurringEditor(null)}>
+          <div className="recurring-editor">
+            <section className="doc-section">
+              <h3>{recurringEditor.title}</h3>
+              <p className="muted">{recurringEditor.room} - {recurringEditor.category}</p>
+            </section>
+            <form
+              className="form-grid recurring-editor-grid"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onUpsertProducerRecurringTask?.(recurringEditor);
+                setRecurringEditor(null);
+              }}
+            >
+              <label>
+                Start date
+                <input
+                  type="date"
+                  value={recurringEditor.startDateIso}
+                  onChange={(e) => {
+                    const nextDate = new Date(`${e.target.value}T00:00:00`);
+                    const weekday = Number.isNaN(nextDate.getTime())
+                      ? recurringEditor.weekday
+                      : (nextDate.getDay() + 6) % 7;
+                    setRecurringEditor({ ...recurringEditor, startDateIso: e.target.value, weekday });
+                  }}
+                />
+              </label>
+              <label>
+                Time
+                <input
+                  type="time"
+                  value={recurringEditor.time}
+                  onChange={(e) => setRecurringEditor({ ...recurringEditor, time: e.target.value })}
+                />
+              </label>
+              <label>
+                Repeat
+                <select
+                  value={recurringEditor.frequency}
+                  onChange={(e) => setRecurringEditor({ ...recurringEditor, frequency: e.target.value as RecurringFrequency })}
+                >
+                  {recurringFrequencyOptions.map(([value, label]) => (
+                    <option key={`recurring-frequency-${value}`} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Repeat on
+                <select
+                  value={recurringEditor.weekday}
+                  onChange={(e) => setRecurringEditor({ ...recurringEditor, weekday: Number(e.target.value) })}
+                >
+                  {UI.dayLabels.map((label, weekday) => (
+                    <option key={`modal-repeat-${label}`} value={weekday}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Hours
+                <select
+                  value={recurringEditor.hours}
+                  onChange={(e) => setRecurringEditor({ ...recurringEditor, hours: Number(e.target.value) })}
+                >
+                  {UI.hourStepOptions().map((value) => (
+                    <option key={`recurring-hours-${value}`} value={value}>
+                      {controller.formatHoursLabel(value)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Priority
+                <select
+                  value={recurringEditor.priority}
+                  onChange={(e) => setRecurringEditor({ ...recurringEditor, priority: Number(e.target.value) })}
+                >
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <option key={`recurring-priority-${value}`} value={value}>
+                      Priority {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="button-row full-span">
+                <button type="submit">Save Recurring Task</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRemoveProducerRecurringTask?.(recurringEditor.templateId);
+                    setRecurringEditor(null);
+                  }}
+                >
+                  Remove Recurring Task
+                </button>
+              </div>
+            </form>
+          </div>
+        </Modal>
+      ) : null}
       {editingTaskId ? (
         <Modal title="Edit Scheduled Task" onClose={() => setEditingTaskId(null)}>
           <div className="task-card compact edit-task-card">
@@ -3973,8 +3903,20 @@ function WeeklyPage({ controller }: { controller: AppController }) {
   );
 }
 
-function CalendarPage({ controller }: { controller: AppController }) {
-  const tasks = controller.allScheduledCalendarTasksForActiveTrack();
+function CalendarPage({
+  controller,
+  title = 'Calendar Overview',
+  taskFilter,
+  extraTasks = [],
+}: {
+  controller: AppController;
+  title?: string;
+  taskFilter?: (task: WeekTask) => boolean;
+  extraTasks?: WeekTask[];
+}) {
+  const allTasks = controller.allScheduledCalendarTasksForActiveTrack();
+  const filteredTasks = taskFilter ? allTasks.filter(taskFilter) : allTasks;
+  const tasks = [...filteredTasks, ...extraTasks];
   const [monthCursor, setMonthCursor] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -4023,7 +3965,7 @@ function CalendarPage({ controller }: { controller: AppController }) {
   return (
     <div className="card">
       <div className="month-nav">
-        <h2>Calendar Overview</h2>
+        <h2>{title}</h2>
         <div className="button-row">
           <button
             onClick={() =>
@@ -4119,11 +4061,10 @@ function AdminPage({ controller }: { controller: AppController }) {
   const [category, setCategory] = useState('');
   const [priority, setPriority] = useState(3);
   const [hours, setHours] = useState(1);
-  const [taskRecurrenceMode, setTaskRecurrenceMode] = useState<'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly'>('none');
+  const [taskRecurrenceMode, setTaskRecurrenceMode] = useState<'none' | 'calendarDate' | 'everyDays' | 'monthly'>('none');
   const [taskRecurrenceDateIso, setTaskRecurrenceDateIso] = useState('');
   const [taskRecurrenceEveryDays, setTaskRecurrenceEveryDays] = useState(7);
   const [taskRecurrenceMonthlyDay, setTaskRecurrenceMonthlyDay] = useState(1);
-  const [taskRecurrenceWeekdays, setTaskRecurrenceWeekdays] = useState<number[]>([]);
   const [createAutoScheduledTasks, setCreateAutoScheduledTasks] = useState<AutoScheduledTaskDraft[]>([]);
   const [createSendDataToSpecificEmployee, setCreateSendDataToSpecificEmployee] = useState(false);
   const [createDataRecipientRole, setCreateDataRecipientRole] = useState<UserRole>('producer');
@@ -4150,7 +4091,6 @@ function AdminPage({ controller }: { controller: AppController }) {
       taskRecurrenceDateIso,
       taskRecurrenceEveryDays,
       taskRecurrenceMonthlyDay,
-      taskRecurrenceWeekdays,
       autoScheduledTasks: sortAutoTaskDrafts(createAutoScheduledTasks),
       sendDataToSpecificEmployee: createSendDataToSpecificEmployee,
       dataRecipientRole: createDataRecipientRole,
@@ -4165,7 +4105,6 @@ function AdminPage({ controller }: { controller: AppController }) {
     setTaskRecurrenceDateIso('');
     setTaskRecurrenceEveryDays(7);
     setTaskRecurrenceMonthlyDay(1);
-    setTaskRecurrenceWeekdays([]);
     setCreateAutoScheduledTasks([]);
     setCreateSendDataToSpecificEmployee(false);
     setCreateDataRecipientRole('producer');
@@ -4180,7 +4119,7 @@ function AdminPage({ controller }: { controller: AppController }) {
 
   const adminCleanupCard = (
     <div className="card">
-      <h2>Admin Cleanup</h2>
+      <h2>CEO Modification Cleanup</h2>
       <div className="form-grid">
         <p className="muted">
           Choose the role, week range, and cleanup target (schedules, calendar history, or both).
@@ -4275,7 +4214,7 @@ function AdminPage({ controller }: { controller: AppController }) {
               clearCalendarHistory,
             });
             if (!ok) {
-              alert('Only admin role can clear schedules.');
+              alert('Select Admin to clear schedules.');
               return;
             }
             alert(`Cleanup complete for ${userRoleLabel[clearRole]}.`);
@@ -4289,10 +4228,10 @@ function AdminPage({ controller }: { controller: AppController }) {
 
   return (
     <div className="grid">
-      <div className="card template-create-card">
+      <div className="card">
         <h2>Create New Task Template</h2>
-        {controller.selectedRole === 'ceo' ? <p className="muted"><strong>Admin View</strong></p> : null}
-        <form onSubmit={onCreate} className="form-grid template-create-grid">
+        <p className="muted"><strong>Admin editing is on.</strong></p>
+        <form onSubmit={onCreate} className="form-grid">
           <label>
             Track
             <select value={track} onChange={(e) => setTrack(e.target.value as AssessmentTrack)}>
@@ -4333,35 +4272,14 @@ function AdminPage({ controller }: { controller: AppController }) {
             Task Recurrence
             <select
               value={taskRecurrenceMode}
-              onChange={(e) => setTaskRecurrenceMode(e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly')}
+              onChange={(e) => setTaskRecurrenceMode(e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly')}
             >
               <option value="none">No recurrence</option>
-              <option value="weekly">Weekly (day of week)</option>
               <option value="calendarDate">Calendar date</option>
               <option value="everyDays">Every certain days</option>
               <option value="monthly">Monthly (day of month)</option>
             </select>
           </label>
-          {taskRecurrenceMode === 'weekly' ? (
-            <div className="recurring-weekday-checklist full-span">
-              {UI.dayLabels.map((label, weekday) => (
-                <label key={`create-task-recur-${label}`} className="inline-check">
-                  <input
-                    type="checkbox"
-                    checked={taskRecurrenceWeekdays.includes(weekday)}
-                    onChange={(e) =>
-                      setTaskRecurrenceWeekdays((current) =>
-                        e.target.checked
-                          ? Array.from(new Set([...current, weekday])).sort((a, b) => a - b)
-                          : current.filter((day) => day !== weekday),
-                      )
-                    }
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-          ) : null}
           {taskRecurrenceMode === 'calendarDate' ? (
             <label>
               Calendar Date
@@ -4473,7 +4391,6 @@ function AdminPage({ controller }: { controller: AppController }) {
                               daysUntilDue: e.target.value ? null : item.daysUntilDue,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
-                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -4494,7 +4411,6 @@ function AdminPage({ controller }: { controller: AppController }) {
                               daysUntilDue: e.target.value ? Number(e.target.value) : null,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
-                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -4525,23 +4441,16 @@ function AdminPage({ controller }: { controller: AppController }) {
                                 ...item,
                                 recurrence: 'none',
                                 recurringWeekday: null,
-                                recurringWeekdays: [],
                                 recurringDayOfMonth: null,
                                 recurringMonthOfYear: null,
                               };
                             }
-                            const nextWeekdays = option.value === 'weekly'
-                              ? recurringWeekdaysForTask(item).length > 0
-                                ? recurringWeekdaysForTask(item)
-                                : [item.recurringWeekday ?? 0]
-                              : [];
                             return {
                               ...item,
                               dueDateIso: '',
                               daysUntilDue: null,
                               recurrence: option.value,
-                              recurringWeekday: option.value === 'weekly' ? nextWeekdays[0] ?? 0 : null,
-                              recurringWeekdays: nextWeekdays,
+                              recurringWeekday: option.value === 'weekly' ? (item.recurringWeekday ?? 0) : null,
                               recurringDayOfMonth:
                                 option.value === 'monthly' || option.value === 'yearly'
                                   ? (item.recurringDayOfMonth ?? 1)
@@ -4557,35 +4466,25 @@ function AdminPage({ controller }: { controller: AppController }) {
                   ))}
                 </div>
                 {task.recurrence === 'weekly' ? (
-                  <div className="recurring-weekday-checklist full-span">
-                    {UI.dayLabels.map((label, weekday) => {
-                      const selectedWeekdays = recurringWeekdaysForTask(task);
-                      return (
-                        <label key={`create-recurring-${index}-${label}`} className="inline-check">
-                          <input
-                            type="checkbox"
-                            checked={selectedWeekdays.includes(weekday)}
-                            onChange={(e) =>
-                              setCreateAutoScheduledTasks((current) =>
-                                current.map((item, itemIndex) => {
-                                  if (itemIndex !== index) return item;
-                                  const currentWeekdays = recurringWeekdaysForTask(item);
-                                  const nextWeekdays = e.target.checked
-                                    ? Array.from(new Set([...currentWeekdays, weekday])).sort((a, b) => a - b)
-                                    : currentWeekdays.filter((day) => day !== weekday);
-                                  return {
-                                    ...item,
-                                    recurringWeekday: nextWeekdays[0] ?? null,
-                                    recurringWeekdays: nextWeekdays,
-                                  };
-                                }),
-                              )
-                            }
-                          />
-                          {label}
-                        </label>
-                      );
-                    })}
+                  <div className="day-pill-row recurring-row full-span">
+                    {UI.dayLabels.map((label, weekday) => (
+                      <button
+                        key={`create-recurring-${index}-${label}`}
+                        type="button"
+                        className={`day-pill ${task.recurringWeekday === weekday ? 'active-day' : ''}`}
+                        onClick={() =>
+                          setCreateAutoScheduledTasks((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, recurringWeekday: weekday }
+                                : item,
+                            ),
+                          )
+                        }
+                      >
+                        {label.slice(0, 3)}
+                      </button>
+                    ))}
                   </div>
                 ) : null}
                 {task.recurrence === 'monthly' ? (
@@ -4678,7 +4577,6 @@ function AdminPage({ controller }: { controller: AppController }) {
                       daysUntilDue: null,
                       recurrence: 'none',
                       recurringWeekday: null,
-                      recurringWeekdays: [],
                       recurringDayOfMonth: null,
                       recurringMonthOfYear: null,
                     },
@@ -4724,7 +4622,7 @@ function AdminPage({ controller }: { controller: AppController }) {
       </div>
 
       <div className="card">
-        <h2>Admin Editable Tasks ({templates.length})</h2>
+        <h2>CEO Modification Tasks ({templates.length})</h2>
         <div className="calendar-list">
           {templates.map((template) => (
             <EditableTemplate key={template.id} template={template} controller={controller} />
@@ -4741,7 +4639,6 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState({
     ...template,
-    taskRecurrenceWeekdays: templateRecurrenceWeekdays(template.taskRecurrenceWeekdays),
     autoScheduledTasks: sortAutoTaskDrafts(template.autoScheduledTasks),
   });
   const orderedDraftAutoTaskIndexes = draft.autoScheduledTasks
@@ -4764,7 +4661,6 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
               onClick={() => {
                 setDraft({
                   ...template,
-                  taskRecurrenceWeekdays: templateRecurrenceWeekdays(template.taskRecurrenceWeekdays),
                   autoScheduledTasks: sortAutoTaskDrafts(template.autoScheduledTasks),
                 });
                 setIsEditing(true);
@@ -4811,41 +4707,15 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
             onChange={(e) =>
               setDraft({
                 ...draft,
-                taskRecurrenceMode: e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly' | 'weekly',
+                taskRecurrenceMode: e.target.value as 'none' | 'calendarDate' | 'everyDays' | 'monthly',
               })
             }
           >
             <option value="none">No recurrence</option>
-            <option value="weekly">Weekly (day of week)</option>
             <option value="calendarDate">Calendar date</option>
             <option value="everyDays">Every certain days</option>
             <option value="monthly">Monthly (day of month)</option>
           </select>
-          {draft.taskRecurrenceMode === 'weekly' ? (
-            <div className="recurring-weekday-checklist full-span">
-              {UI.dayLabels.map((label, weekday) => {
-                const selectedWeekdays = templateRecurrenceWeekdays(draft.taskRecurrenceWeekdays);
-                return (
-                  <label key={`edit-task-recur-${draft.id}-${label}`} className="inline-check">
-                    <input
-                      type="checkbox"
-                      checked={selectedWeekdays.includes(weekday)}
-                      onChange={(e) =>
-                        setDraft((current) => {
-                          const currentWeekdays = templateRecurrenceWeekdays(current.taskRecurrenceWeekdays);
-                          const nextWeekdays = e.target.checked
-                            ? Array.from(new Set([...currentWeekdays, weekday])).sort((a, b) => a - b)
-                            : currentWeekdays.filter((day) => day !== weekday);
-                          return { ...current, taskRecurrenceWeekdays: nextWeekdays };
-                        })
-                      }
-                    />
-                    {label}
-                  </label>
-                );
-              })}
-            </div>
-          ) : null}
           {draft.taskRecurrenceMode === 'calendarDate' ? (
             <input
               type="date"
@@ -4949,7 +4819,6 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                               daysUntilDue: e.target.value ? null : item.daysUntilDue,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
-                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -4971,7 +4840,6 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                               daysUntilDue: e.target.value ? Number(e.target.value) : null,
                               recurrence: e.target.value ? 'none' : item.recurrence,
                               recurringWeekday: null,
-                              recurringWeekdays: [],
                               recurringDayOfMonth: null,
                               recurringMonthOfYear: null,
                             }
@@ -5003,23 +4871,16 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                                 ...item,
                                 recurrence: 'none',
                                 recurringWeekday: null,
-                                recurringWeekdays: [],
                                 recurringDayOfMonth: null,
                                 recurringMonthOfYear: null,
                               };
                             }
-                            const nextWeekdays = option.value === 'weekly'
-                              ? recurringWeekdaysForTask(item).length > 0
-                                ? recurringWeekdaysForTask(item)
-                                : [item.recurringWeekday ?? 0]
-                              : [];
                             return {
                               ...item,
                               dueDateIso: '',
                               daysUntilDue: null,
                               recurrence: option.value,
-                              recurringWeekday: option.value === 'weekly' ? nextWeekdays[0] ?? 0 : null,
-                              recurringWeekdays: nextWeekdays,
+                              recurringWeekday: option.value === 'weekly' ? (item.recurringWeekday ?? 0) : null,
                               recurringDayOfMonth:
                                 option.value === 'monthly' || option.value === 'yearly'
                                   ? (item.recurringDayOfMonth ?? 1)
@@ -5035,36 +4896,26 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                   ))}
                 </div>
                 {task.recurrence === 'weekly' ? (
-                  <div className="recurring-weekday-checklist full-span">
-                    {UI.dayLabels.map((label, weekday) => {
-                      const selectedWeekdays = recurringWeekdaysForTask(task);
-                      return (
-                        <label key={`edit-recurring-${index}-${label}`} className="inline-check">
-                          <input
-                            type="checkbox"
-                            checked={selectedWeekdays.includes(weekday)}
-                            onChange={(e) =>
-                              setDraft((current) => ({
-                                ...current,
-                                autoScheduledTasks: current.autoScheduledTasks.map((item, itemIndex) => {
-                                  if (itemIndex !== index) return item;
-                                  const currentWeekdays = recurringWeekdaysForTask(item);
-                                  const nextWeekdays = e.target.checked
-                                    ? Array.from(new Set([...currentWeekdays, weekday])).sort((a, b) => a - b)
-                                    : currentWeekdays.filter((day) => day !== weekday);
-                                  return {
-                                    ...item,
-                                    recurringWeekday: nextWeekdays[0] ?? null,
-                                    recurringWeekdays: nextWeekdays,
-                                  };
-                                }),
-                              }))
-                            }
-                          />
-                          {label}
-                        </label>
-                      );
-                    })}
+                  <div className="day-pill-row recurring-row full-span">
+                    {UI.dayLabels.map((label, weekday) => (
+                      <button
+                        key={`edit-recurring-${index}-${label}`}
+                        type="button"
+                        className={`day-pill ${task.recurringWeekday === weekday ? 'active-day' : ''}`}
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            autoScheduledTasks: current.autoScheduledTasks.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, recurringWeekday: weekday }
+                                : item,
+                            ),
+                          }))
+                        }
+                      >
+                        {label.slice(0, 3)}
+                      </button>
+                    ))}
                   </div>
                 ) : null}
                 {task.recurrence === 'monthly' ? (
@@ -5165,7 +5016,6 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                         daysUntilDue: null,
                         recurrence: 'none',
                         recurringWeekday: null,
-                        recurringWeekdays: [],
                         recurringDayOfMonth: null,
                         recurringMonthOfYear: null,
                       },
@@ -5226,7 +5076,6 @@ function EditableTemplate({ template, controller }: { template: AssessmentTempla
                   onClick={() => {
                     setDraft({
                       ...template,
-                      taskRecurrenceWeekdays: templateRecurrenceWeekdays(template.taskRecurrenceWeekdays),
                       autoScheduledTasks: sortAutoTaskDrafts(template.autoScheduledTasks),
                     });
                     setIsEditing(false);

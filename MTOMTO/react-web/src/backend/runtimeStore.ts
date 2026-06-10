@@ -65,7 +65,6 @@ function normalizeTrackRecord<T>(value: unknown, fallback: T): Record<Assessment
     producer: (record.producer as T) ?? fallback,
     generalManager: (record.generalManager as T) ?? fallback,
     joManager: (record.joManager as T) ?? fallback,
-    flowerSales: (record.flowerSales as T) ?? fallback,
     budtenderTd: (record.budtenderTd as T) ?? fallback,
     budtenderTdJunior: (record.budtenderTdJunior as T) ?? fallback,
     budtenderJo: (record.budtenderJo as T) ?? fallback,
